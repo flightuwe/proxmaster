@@ -1,0 +1,78 @@
+name: Project - PR Merged -> Done
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  mark-linked-issues-done:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+      PROJECT_OWNER: flightuwe
+      PROJECT_NUMBER: 1
+      REPO_OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Validate token
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "Missing GH_PROJECT_TOKEN secret"
+            exit 1
+          fi
+
+      - name: Set linked issues to Done
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project_json="$(gh api graphql \
+            -f query='query($owner:String!, $number:Int!) {
+              user: user(login:$owner) { projectV2(number:$number) { id fields(first:50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }
+              org: organization(login:$owner) { projectV2(number:$number) { id fields(first:50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }
+            }' \
+            -F owner="$PROJECT_OWNER" \
+            -F number="$PROJECT_NUMBER")"
+
+          project_id="$(echo "$project_json" | jq -r '.data.user.projectV2.id // .data.org.projectV2.id')"
+          status_field_id="$(echo "$project_json" | jq -r '(.data.user.projectV2.fields.nodes // .data.org.projectV2.fields.nodes)[] | select(.name=="Status") | .id' | head -n 1)"
+          done_option_id="$(echo "$project_json" | jq -r '(.data.user.projectV2.fields.nodes // .data.org.projectV2.fields.nodes)[] | select(.name=="Status") | .options[] | select(.name=="Done") | .id' | head -n 1)"
+
+          if [ "$project_id" = "null" ] || [ -z "$project_id" ] || [ -z "$status_field_id" ] || [ -z "$done_option_id" ]; then
+            echo "Missing project/status metadata"
+            exit 1
+          fi
+
+          issues_json="$(gh api graphql \
+            -f query='query($owner:String!, $repo:String!, $number:Int!) {
+              repository(owner:$owner, name:$repo) {
+                pullRequest(number:$number) {
+                  closingIssuesReferences(first:50) { nodes { url } }
+                }
+              }
+            }' \
+            -F owner="$REPO_OWNER" \
+            -F repo="$REPO_NAME" \
+            -F number="$PR_NUMBER")"
+
+          mapfile -t issue_urls < <(echo "$issues_json" | jq -r '.data.repository.pullRequest.closingIssuesReferences.nodes[].url')
+          if [ "${#issue_urls[@]}" -eq 0 ]; then
+            echo "No linked issues found for PR #$PR_NUMBER"
+            exit 0
+          fi
+
+          for issue_url in "${issue_urls[@]}"; do
+            item_id="$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 200 --format json --jq ".items[] | select(.content.url == \"$issue_url\") | .id" | head -n 1 || true)"
+            if [ -z "${item_id}" ]; then
+              gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$issue_url" >/dev/null
+              item_id="$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 200 --format json --jq ".items[] | select(.content.url == \"$issue_url\") | .id" | head -n 1)"
+            fi
+            gh project item-edit --id "$item_id" --project-id "$project_id" --field-id "$status_field_id" --single-select-option-id "$done_option_id"
+          done

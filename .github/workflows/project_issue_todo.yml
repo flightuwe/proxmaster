@@ -1,0 +1,61 @@
+name: Project - New Issue -> Todo
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  add-to-project-todo:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
+      PROJECT_OWNER: flightuwe
+      PROJECT_NUMBER: 1
+      ISSUE_URL: ${{ github.event.issue.html_url }}
+    steps:
+      - name: Validate token
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "Missing GH_PROJECT_TOKEN secret"
+            exit 1
+          fi
+
+      - name: Add issue to project and set Todo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project_json="$(gh api graphql \
+            -f query='query($owner:String!, $number:Int!) {
+              user: user(login:$owner) { projectV2(number:$number) { id fields(first:50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }
+              org: organization(login:$owner) { projectV2(number:$number) { id fields(first:50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } }
+            }' \
+            -F owner="$PROJECT_OWNER" \
+            -F number="$PROJECT_NUMBER")"
+
+          project_id="$(echo "$project_json" | jq -r '.data.user.projectV2.id // .data.org.projectV2.id')"
+          if [ "$project_id" = "null" ] || [ -z "$project_id" ]; then
+            echo "Could not resolve project id"
+            exit 1
+          fi
+
+          existing_item_id="$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 200 --format json --jq ".items[] | select(.content.url == \"$ISSUE_URL\") | .id" || true)"
+          if [ -z "${existing_item_id}" ]; then
+            gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$ISSUE_URL" >/dev/null
+            item_id="$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 200 --format json --jq ".items[] | select(.content.url == \"$ISSUE_URL\") | .id" | head -n 1)"
+          else
+            item_id="$existing_item_id"
+          fi
+
+          status_field_id="$(echo "$project_json" | jq -r '(.data.user.projectV2.fields.nodes // .data.org.projectV2.fields.nodes)[] | select(.name=="Status") | .id' | head -n 1)"
+          todo_option_id="$(echo "$project_json" | jq -r '(.data.user.projectV2.fields.nodes // .data.org.projectV2.fields.nodes)[] | select(.name=="Status") | .options[] | select(.name=="Todo" or .name=="Backlog" or .name=="To do") | .id' | head -n 1)"
+
+          if [ -n "${status_field_id}" ] && [ "${status_field_id}" != "null" ] && [ -n "${todo_option_id}" ] && [ "${todo_option_id}" != "null" ]; then
+            gh project item-edit --id "$item_id" --project-id "$project_id" --field-id "$status_field_id" --single-select-option-id "$todo_option_id"
+          else
+            echo "Status field or Todo option not found; item added without status update"
+          fi

@@ -57,3 +57,19 @@ POST /mcp/approve
 - Integrate real Proxmox API auth/session handling
 - Wire Vault-backed secrets and short-lived credentials
 - Add WireGuard/Tailscale sidecar and policy enforcement
+
+## GitHub Project automation
+
+This repository includes GitHub Actions that keep the project board in sync:
+
+- New issue -> add to project + set status to `Todo`
+- PR opened/reopened/synchronize -> linked issues set to `In Progress`
+- PR merged -> linked issues set to `Done`
+
+### One-time setup
+
+1. Create a personal access token (classic) with scopes: `repo`, `project`.
+2. Add it as repository secret: `GH_PROJECT_TOKEN`.
+3. Confirm project settings in workflows:
+   - `PROJECT_OWNER=flightuwe`
+   - `PROJECT_NUMBER=1`
