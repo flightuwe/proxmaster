@@ -72,6 +72,10 @@ write_env_file() {
   local pg_dsn="$3"
   local runner_node_id="$4"
   local runner_secret="$5"
+  local cp_mode="$6"
+  local cp_vip="$7"
+  local cp_dns="$8"
+  local cp_port="$9"
 
   cat >"$INFRA_ENV_FILE" <<EOF
 PROXMASTER_LISTEN_ADDR=:8080
@@ -80,6 +84,11 @@ PROXMASTER_STORE_BACKEND=$store_backend
 PROXMASTER_POSTGRES_DSN=$pg_dsn
 PROXMASTER_FAIL_CLOSED=true
 PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC=120
+PROXMASTER_CONTROLPLANE_MODE=$cp_mode
+PROXMASTER_CONTROLPLANE_VIP=$cp_vip
+PROXMASTER_CONTROLPLANE_DNS_NAME=$cp_dns
+PROXMASTER_CONTROLPLANE_API_PORT=$cp_port
+PROXMASTER_NODE_ID=$runner_node_id
 RUNNER_LISTEN_ADDR=:9091
 RUNNER_NODE_ID=$runner_node_id
 RUNNER_SHARED_SECRET=$runner_secret
@@ -112,20 +121,24 @@ EOF
 }
 
 quick_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port
   admin_token="$(rand_token)"
   store_backend="postgres"
   pg_dsn="postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
   runner_node_id="node-1"
   runner_secret="$(rand_token)"
+  cp_mode="vip"
+  cp_vip="100.100.100.10"
+  cp_dns="proxmaster.internal"
+  cp_port="8080"
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret"
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port"
   start_stack
   print_summary "$admin_token"
 }
 
 custom_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port
   read -r -p "Admin Token (leer = automatisch generieren): " admin_token
   if [ -z "$admin_token" ]; then admin_token="$(rand_token)"; fi
 
@@ -141,7 +154,19 @@ custom_install() {
   read -r -p "Runner Shared Secret (leer = automatisch generieren): " runner_secret
   if [ -z "$runner_secret" ]; then runner_secret="$(rand_token)"; fi
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret"
+  read -r -p "ControlPlane Modus [vip/dns] (default: vip): " cp_mode
+  if [ -z "$cp_mode" ]; then cp_mode="vip"; fi
+
+  read -r -p "ControlPlane VIP (default: 100.100.100.10): " cp_vip
+  if [ -z "$cp_vip" ]; then cp_vip="100.100.100.10"; fi
+
+  read -r -p "ControlPlane DNS Name (default: proxmaster.internal): " cp_dns
+  if [ -z "$cp_dns" ]; then cp_dns="proxmaster.internal"; fi
+
+  read -r -p "ControlPlane API Port (default: 8080): " cp_port
+  if [ -z "$cp_port" ]; then cp_port="8080"; fi
+
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port"
   start_stack
   print_summary "$admin_token"
 }

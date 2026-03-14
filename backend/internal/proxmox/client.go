@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"time"
 
+	"proxmaster/backend/internal/controlplane"
 	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/store"
 )
 
 type Client struct {
-	store store.Store
+	store       store.Store
+	controlPlane *controlplane.Manager
 }
 
-func NewClient(s store.Store) *Client {
-	return &Client{store: s}
+func NewClient(s store.Store, cp *controlplane.Manager) *Client {
+	return &Client{store: s, controlPlane: cp}
 }
 
 func (c *Client) GetState(_ context.Context) models.ClusterState {
@@ -76,6 +78,7 @@ func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode strin
 	if !ok {
 		return nil, errors.New("vm migration failed")
 	}
+	switchResult := c.controlPlane.SwitchTo(targetNode)
 
 	return map[string]any{
 		"changed":                true,
@@ -86,7 +89,8 @@ func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode strin
 		"live_migration":         true,
 		"restart_after_migrate":  restartAfter,
 		"switch_mode":            "seamless_handover",
-		"client_reconnect_hint":  "reconnect API client to cluster VIP or overlay DNS within ~20s",
+		"client_reconnect_hint":  "reconnect API client to active control-plane endpoint",
+		"handover":               switchResult,
 		"completed_at_utc":       time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }

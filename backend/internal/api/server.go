@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"proxmaster/backend/internal/config"
+	"proxmaster/backend/internal/controlplane"
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/mcp"
 	"proxmaster/backend/internal/models"
@@ -20,11 +21,12 @@ type Server struct {
 	store    store.Store
 	mcpSvc   *mcp.Service
 	gateEval *health.GateEvaluator
+	cp       *controlplane.Manager
 	handler  http.Handler
 }
 
-func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator) *Server {
-	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval}
+func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator, cp *controlplane.Manager) *Server {
+	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval, cp: cp}
 	r := http.NewServeMux()
 	r.HandleFunc("/healthz", s.handleHealth)
 	r.HandleFunc("/auth/login", s.handleLogin)
@@ -40,6 +42,7 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/incidents", s.withAuth(s.handleIncidents))
 	r.HandleFunc("/policy/simulate", s.withAuth(s.handlePolicySimulate))
 	r.HandleFunc("/policy/explain", s.withAuth(s.handlePolicyExplain))
+	r.HandleFunc("/controlplane/endpoint", s.withAuth(s.handleControlPlaneEndpoint))
 	r.HandleFunc("/mcp/call", s.withAuth(s.handleMCPCall))
 	r.HandleFunc("/mcp/approve", s.withAuth(s.handleMCPApprove))
 	s.handler = loggingMiddleware(r)
@@ -54,6 +57,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"status":      "ok",
 		"time":        time.Now().UTC(),
 		"health_gate": s.gateEval.Explain(snap),
+		"controlplane": map[string]any{
+			"mode":         s.cp.Mode(),
+			"endpoint":     s.cp.Endpoint(),
+			"current_node": s.cp.CurrentNode(),
+		},
 	})
 }
 
@@ -95,6 +103,11 @@ func (s *Server) handleClusterOverview(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"cluster":     s.store.ClusterState(),
 		"health_gate": s.gateEval.Explain(snap),
+		"controlplane": map[string]any{
+			"mode":         s.cp.Mode(),
+			"endpoint":     s.cp.Endpoint(),
+			"current_node": s.cp.CurrentNode(),
+		},
 	})
 }
 
@@ -175,8 +188,16 @@ func (s *Server) handlePolicyExplain(w http.ResponseWriter, _ *http.Request) {
 	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":        "SRE_MODE_FAIL_CLOSED",
-		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec"},
+		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate"},
 		"health_gate": s.gateEval.Explain(snap),
+	})
+}
+
+func (s *Server) handleControlPlaneEndpoint(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode":         s.cp.Mode(),
+		"endpoint":     s.cp.Endpoint(),
+		"current_node": s.cp.CurrentNode(),
 	})
 }
 

@@ -13,6 +13,11 @@ type Config struct {
 	PostgresDSN           string
 	FailClosed            bool
 	RunnerHeartbeatMaxSec int
+	ControlPlaneMode      string
+	ControlPlaneVIP       string
+	ControlPlaneDNSName   string
+	ControlPlaneAPIPort   int
+	ControlPlaneNodeID    string
 }
 
 func Load() Config {
@@ -24,6 +29,11 @@ func Load() Config {
 		PostgresDSN:           envOr("PROXMASTER_POSTGRES_DSN", "postgres://proxmaster:proxmaster@localhost:5432/proxmaster?sslmode=disable"),
 		FailClosed:            envOr("PROXMASTER_FAIL_CLOSED", "true") == "true",
 		RunnerHeartbeatMaxSec: envOrInt("PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC", 120),
+		ControlPlaneMode:      envOr("PROXMASTER_CONTROLPLANE_MODE", "vip"),
+		ControlPlaneVIP:       envOr("PROXMASTER_CONTROLPLANE_VIP", "100.100.100.10"),
+		ControlPlaneDNSName:   envOr("PROXMASTER_CONTROLPLANE_DNS_NAME", "proxmaster.internal"),
+		ControlPlaneAPIPort:   envOrInt("PROXMASTER_CONTROLPLANE_API_PORT", 8080),
+		ControlPlaneNodeID:    envOr("PROXMASTER_NODE_ID", "node-1"),
 	}
 	return cfg
 }

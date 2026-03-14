@@ -64,6 +64,14 @@ paths:
       responses:
         "200":
           description: Policy explanation
+  /controlplane/endpoint:
+    get:
+      summary: Get currently active control-plane endpoint (VIP/DNS handover target)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Endpoint details
   /mcp/call:
     post:
       summary: Execute MCP tool call

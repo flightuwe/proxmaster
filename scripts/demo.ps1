@@ -51,3 +51,6 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -Conte
     second_approver = "ops-admin"
     idempotency_key = "demo-selfmig-001"
 } | ConvertTo-Json)
+
+Write-Host "7) Active control-plane endpoint"
+Invoke-RestMethod -Method Get -Uri "$base/controlplane/endpoint" -Headers $headers

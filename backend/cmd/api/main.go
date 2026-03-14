@@ -8,6 +8,7 @@ import (
 
 	"proxmaster/backend/internal/api"
 	"proxmaster/backend/internal/config"
+	"proxmaster/backend/internal/controlplane"
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/mcp"
 	"proxmaster/backend/internal/orchestrator"
@@ -21,7 +22,14 @@ import (
 func main() {
 	cfg := config.Load()
 	st := buildStore(cfg)
-	px := proxmox.NewClient(st)
+	cp := controlplane.NewManager(controlplane.Config{
+		Mode:        controlplane.Mode(cfg.ControlPlaneMode),
+		VIP:         cfg.ControlPlaneVIP,
+		DNSName:     cfg.ControlPlaneDNSName,
+		APIPort:     cfg.ControlPlaneAPIPort,
+		InitialNode: cfg.ControlPlaneNodeID,
+	})
+	px := proxmox.NewClient(st, cp)
 	runnerCtrl := runner.NewController()
 	orch := orchestrator.New(px, runnerCtrl)
 	riskEngine := risk.NewEngine()
@@ -29,7 +37,7 @@ func main() {
 	gateEval := health.NewGateEvaluator(cfg.FailClosed, cfg.RunnerHeartbeatMaxSec)
 	mcpSvc := mcp.NewService(st, riskEngine, policyGate, gateEval, orch)
 
-	srv := api.NewServer(cfg, st, mcpSvc, gateEval)
+	srv := api.NewServer(cfg, st, mcpSvc, gateEval, cp)
 	log.Printf("proxmaster api listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Handler()); err != nil {
 		log.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"proxmaster/backend/internal/controlplane"
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/orchestrator"
@@ -21,7 +22,7 @@ func TestHandleCallHardBlock(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"})), runner.NewController()),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
@@ -47,7 +48,7 @@ func TestHandleCallApproved(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"})), runner.NewController()),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
@@ -73,7 +74,7 @@ func TestHandleCallIdempotencyKey(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"})), runner.NewController()),
 	)
 
 	req := models.MCPCallRequest{

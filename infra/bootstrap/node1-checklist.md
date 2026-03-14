@@ -12,6 +12,7 @@
 8. Validate:
    - `/healthz`
    - `/cluster/overview`
+   - `/controlplane/endpoint`
    - hard-block path via `/mcp/call` + `/mcp/approve`
    - `/policy/simulate`
    - `/nodes/heartbeat`

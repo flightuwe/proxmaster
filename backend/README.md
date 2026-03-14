@@ -6,6 +6,7 @@ Go control plane implementing:
 - Cluster inventory endpoints (`/cluster/overview`, `/nodes`, `/vms`)
 - Jobs, audit, incidents (`/jobs`, `/jobs/{id}`, `/audit`, `/incidents`)
 - Policy API (`/policy/simulate`, `/policy/explain`)
+- Control-plane endpoint (`/controlplane/endpoint`)
 - MCP tool execution (`/mcp/call`) + approval path (`/mcp/approve`)
 - Node runner heartbeat endpoint (`/nodes/heartbeat`)
 
@@ -15,6 +16,11 @@ Go control plane implementing:
 $env:PROXMASTER_ADMIN_TOKEN="dev-admin-token"
 $env:PROXMASTER_STORE_BACKEND="memory" # or postgres
 # $env:PROXMASTER_POSTGRES_DSN="postgres://proxmaster:proxmaster@localhost:5432/proxmaster?sslmode=disable"
+$env:PROXMASTER_CONTROLPLANE_MODE="vip" # vip|dns
+$env:PROXMASTER_CONTROLPLANE_VIP="100.100.100.10"
+$env:PROXMASTER_CONTROLPLANE_DNS_NAME="proxmaster.internal"
+$env:PROXMASTER_CONTROLPLANE_API_PORT="8080"
+$env:PROXMASTER_NODE_ID="node-1"
 go run ./cmd/api
 ```
 
@@ -64,6 +70,13 @@ Authorization: Bearer <token>
   "hardware_mfa": true,
   "second_approver": "oncall-admin"
 }
+```
+
+Danach aktiven Endpoint pruefen:
+
+```http
+GET /controlplane/endpoint
+Authorization: Bearer <token>
 ```
 
 ## Tests

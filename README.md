@@ -19,6 +19,10 @@ Danach führt dich ein Menü:
 - `Custom Install`
 - `Update bestehender Stack`
 
+`Custom Install` fragt auch den Handover-Typ:
+- `vip` (feste Virtual IP)
+- `dns` (stabiler DNS-Name mit niedriger TTL)
+
 ## Quick start (backend)
 
 ```powershell
