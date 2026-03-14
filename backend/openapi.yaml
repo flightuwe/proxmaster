@@ -1,0 +1,58 @@
+openapi: 3.0.3
+info:
+  title: Proxmaster API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /cluster/overview:
+    get:
+      summary: Cluster overview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cluster state
+  /mcp/call:
+    post:
+      summary: Execute MCP tool call
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tool:
+                  type: string
+                params:
+                  type: object
+                actor:
+                  type: string
+                approve_now:
+                  type: boolean
+      responses:
+        '200':
+          description: Tool execution result
+  /mcp/approve:
+    post:
+      summary: Approve and execute hard-blocked operation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Approval result
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

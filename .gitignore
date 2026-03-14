@@ -1,0 +1,23 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Go
+backend/bin/
+backend/.cache/
+backend/coverage.out
+
+# Android
+android/.gradle/
+android/.idea/
+android/local.properties
+android/**/build/
+
+# Infra/runtime
+.env
+*.log
+
+# Misc
+*.tmp
