@@ -4,13 +4,17 @@ Go control plane implementing:
 
 - Auth stubs (`/auth/login`, `/auth/mfa/verify`, `/auth/reauth`)
 - Cluster inventory endpoints (`/cluster/overview`, `/nodes`, `/vms`)
-- Jobs and audit (`/jobs`, `/jobs/{id}`, `/audit`)
+- Jobs, audit, incidents (`/jobs`, `/jobs/{id}`, `/audit`, `/incidents`)
+- Policy API (`/policy/simulate`, `/policy/explain`)
 - MCP tool execution (`/mcp/call`) + approval path (`/mcp/approve`)
+- Node runner heartbeat endpoint (`/nodes/heartbeat`)
 
 ## Run
 
 ```powershell
 $env:PROXMASTER_ADMIN_TOKEN="dev-admin-token"
+$env:PROXMASTER_STORE_BACKEND="memory" # or postgres
+# $env:PROXMASTER_POSTGRES_DSN="postgres://proxmaster:proxmaster@localhost:5432/proxmaster?sslmode=disable"
 go run ./cmd/api
 ```
 
@@ -19,19 +23,40 @@ go run ./cmd/api
 - `cluster.get_state`
 - `node.set_maintenance`
 - `vm.migrate`
+- `vm.create`
+- `vm.clone_from_template`
+- `lxc.create`
 - `storage.pool.apply`
+- `storage.plan_apply`
 - `network.apply`
-- `updates.rollout_start`
+- `network.plan_apply`
+- `updates.plan`
+- `updates.canary_start`
+- `updates.rollout_continue`
+- `updates.abort`
 - `updates.rollout_pause`
+- `updates.rollout_start`
 - `updates.rollout_abort`
+- `policy.simulate`
+- `policy.explain`
+- `node.runner.exec`
 
 ## Guarded Auto behavior
 
 - `LOW` and `MEDIUM` risk: auto-executed
-- `HIGH` risk: hard-blocked unless explicitly approved (`ApproveNow=true` or `/mcp/approve` with reauth token)
+- `HIGH` risk: approval required (`reauth + hardware_mfa + second_approver`)
+- Fail-closed health gates block writes if quorum/runner health is unsafe
 
 ## Tests
 
 ```powershell
 go test ./...
 ```
+
+## Runner agent (per node)
+
+```powershell
+go run ./cmd/runner-agent
+```
+
+Endpoints: `/healthz`, `/heartbeat`, `/exec` (HMAC-signed envelope).

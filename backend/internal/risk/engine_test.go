@@ -17,4 +17,7 @@ func TestClassify(t *testing.T) {
 	if got := e.Classify("network.apply", nil); got != models.RiskHigh {
 		t.Fatalf("expected HIGH, got %s", got)
 	}
+	if got := e.Classify("vm.create", nil); got != models.RiskMedium {
+		t.Fatalf("expected MEDIUM for vm.create, got %s", got)
+	}
 }

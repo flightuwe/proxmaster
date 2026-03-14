@@ -2,9 +2,9 @@
 
 Proxmaster is a bootstrap-ready Proxmox management stack:
 
-- `backend/`: Go control plane (`API + MCP + risk/policy gates + audit/jobs`)
+- `backend/`: Go control plane (`API + MCP + policy/risk + fail-closed gates + durable event log`)
 - `android/`: Kotlin Android app skeleton for remote administration
-- `infra/`: Docker Compose and bootstrap docs for Node 1 management VM
+- `infra/`: Docker Compose and bootstrap docs for Node 1 management VM and runner agent
 
 ## Quick start (backend)
 
@@ -47,16 +47,28 @@ POST /mcp/approve
 {
   "tool": "network.apply",
   "params": {"name":"vmbr1","kind":"bridge","cidr":"10.20.0.0/24"},
-  "reauth_token": "reauth-ok"
+  "reauth_token": "reauth-ok",
+  "hardware_mfa": true,
+  "second_approver": "oncall-admin"
 }
 ```
 
-## Next hardening steps
+## SRE-mode capabilities implemented
 
-- Replace in-memory store with PostgreSQL persistence
-- Integrate real Proxmox API auth/session handling
-- Wire Vault-backed secrets and short-lived credentials
-- Add WireGuard/Tailscale sidecar and policy enforcement
+- Job FSM lifecycle (`planned -> approved -> running -> verified -> completed|failed|blocked|aborted|rolled_back`)
+- Idempotency key support for mutating calls
+- Fail-closed health gates (quorum + runner heartbeat checks)
+- Guarded high-risk operations with dual approval metadata
+- PostgreSQL-backed durable logs (jobs, audits, incidents) via `PROXMASTER_STORE_BACKEND=postgres`
+- Node runner-agent binary for allowlisted host operations (`backend/cmd/runner-agent`)
+
+## Remaining production hardening
+
+- Replace stub auth with real OIDC + hardware MFA attestation
+- Integrate real Proxmox session/token handling and retries per API category
+- Add Vault transit/signing and credential rotation controller
+- Add Prometheus/tracing exporters and alert rules
+- Add full Android approval UX (second approver evidence flow)
 
 ## GitHub Project automation
 

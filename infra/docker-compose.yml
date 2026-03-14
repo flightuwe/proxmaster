@@ -1,6 +1,27 @@
 version: "3.9"
 
 services:
+  proxmaster-api:
+    image: golang:1.22
+    container_name: proxmaster-api
+    working_dir: /app/backend
+    command: ["go", "run", "./cmd/api"]
+    volumes:
+      - ../:/app
+    environment:
+      PROXMASTER_LISTEN_ADDR: ":8080"
+      PROXMASTER_ADMIN_TOKEN: "dev-admin-token"
+      PROXMASTER_STORE_BACKEND: "postgres"
+      PROXMASTER_POSTGRES_DSN: "postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
+      PROXMASTER_FAIL_CLOSED: "true"
+      PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC: "120"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - vault
+
   postgres:
     image: postgres:16
     container_name: proxmaster-postgres
@@ -29,6 +50,20 @@ services:
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     ports:
       - "8200:8200"
+
+  runner-agent:
+    image: golang:1.22
+    container_name: proxmaster-runner-agent
+    working_dir: /app/backend
+    command: ["go", "run", "./cmd/runner-agent"]
+    volumes:
+      - ../:/app
+    environment:
+      RUNNER_LISTEN_ADDR: ":9091"
+      RUNNER_NODE_ID: "node-1"
+      RUNNER_SHARED_SECRET: "dev-runner-secret"
+    ports:
+      - "9091:9091"
 
 volumes:
   pgdata:

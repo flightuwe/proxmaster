@@ -13,23 +13,41 @@ const (
 type JobStatus string
 
 const (
-	JobPendingApproval JobStatus = "PENDING_APPROVAL"
+	JobPlanned         JobStatus = "PLANNED"
+	JobApproved        JobStatus = "APPROVED"
 	JobRunning         JobStatus = "RUNNING"
-	JobSucceeded       JobStatus = "SUCCEEDED"
+	JobVerified        JobStatus = "VERIFIED"
+	JobCompleted       JobStatus = "COMPLETED"
+	JobAborted         JobStatus = "ABORTED"
+	JobRolledBack      JobStatus = "ROLLED_BACK"
 	JobFailed          JobStatus = "FAILED"
 	JobBlocked         JobStatus = "BLOCKED"
+	JobPendingApproval JobStatus = "PENDING_APPROVAL"
+)
+
+type DecisionType string
+
+const (
+	DecisionAutoRun          DecisionType = "AUTO_RUN"
+	DecisionRequiresApproval DecisionType = "REQUIRES_APPROVAL"
+	DecisionBlocked          DecisionType = "BLOCKED"
 )
 
 type Job struct {
-	ID        string                 `json:"id"`
-	Tool      string                 `json:"tool"`
-	Input     map[string]any         `json:"input"`
-	Risk      RiskLevel              `json:"risk"`
-	Status    JobStatus              `json:"status"`
-	Result    map[string]any         `json:"result,omitempty"`
-	Error     string                 `json:"error,omitempty"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
+	ID                string                 `json:"id"`
+	IdempotencyKey    string                 `json:"idempotency_key,omitempty"`
+	Tool              string                 `json:"tool"`
+	Input             map[string]any         `json:"input"`
+	Risk              RiskLevel              `json:"risk"`
+	Decision          DecisionType           `json:"decision"`
+	RequiredApprovals int                    `json:"required_approvals"`
+	RollbackPlanID    string                 `json:"rollback_plan_id,omitempty"`
+	Status            JobStatus              `json:"status"`
+	StatusHistory     []JobStatus            `json:"status_history,omitempty"`
+	Result            map[string]any         `json:"result,omitempty"`
+	Error             string                 `json:"error,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at"`
 }
 
 type AuditEvent struct {
@@ -52,10 +70,12 @@ type ClusterState struct {
 }
 
 type Node struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Status      string `json:"status"`
-	Maintenance bool   `json:"maintenance"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Status        string    `json:"status"`
+	Maintenance   bool      `json:"maintenance"`
+	LastHeartbeat time.Time `json:"last_heartbeat"`
+	RunnerHealthy bool      `json:"runner_healthy"`
 }
 
 type VM struct {
@@ -64,6 +84,10 @@ type VM struct {
 	Name     string `json:"name"`
 	Power    string `json:"power"`
 	Priority int    `json:"priority"`
+	CPU      int    `json:"cpu"`
+	MemoryMB int    `json:"memory_mb"`
+	DiskGB   int    `json:"disk_gb"`
+	Kind     string `json:"kind"`
 }
 
 type StoragePool struct {
@@ -80,17 +104,49 @@ type NetworkObject struct {
 }
 
 type MCPCallRequest struct {
-	Tool       string                 `json:"tool"`
-	Params     map[string]any         `json:"params"`
-	Actor      string                 `json:"actor"`
-	ApproveNow bool                   `json:"approve_now"`
-	Metadata   map[string]any         `json:"metadata"`
+	Tool            string                 `json:"tool"`
+	Params          map[string]any         `json:"params"`
+	Actor           string                 `json:"actor"`
+	ApproveNow      bool                   `json:"approve_now"`
+	IdempotencyKey  string                 `json:"idempotency_key"`
+	ReauthToken     string                 `json:"reauth_token"`
+	SecondApprover  string                 `json:"second_approver"`
+	HardwareMFA     bool                   `json:"hardware_mfa"`
+	Metadata        map[string]any         `json:"metadata"`
 }
 
 type MCPCallResponse struct {
-	Job          Job            `json:"job"`
-	HardBlocked  bool           `json:"hard_blocked"`
-	NeedsApprove bool           `json:"needs_approval"`
-	AuditEvent   AuditEvent     `json:"audit_event"`
-	Output       map[string]any `json:"output,omitempty"`
+	Job               Job            `json:"job"`
+	JobID             string         `json:"job_id"`
+	RiskLevel         RiskLevel      `json:"risk_level"`
+	Decision          DecisionType   `json:"decision"`
+	RequiredApprovals int            `json:"required_approvals"`
+	RollbackPlanID    string         `json:"rollback_plan_id,omitempty"`
+	HardBlocked       bool           `json:"hard_blocked"`
+	NeedsApprove      bool           `json:"needs_approval"`
+	AuditEvent        AuditEvent     `json:"audit_event"`
+	Output            map[string]any `json:"output,omitempty"`
+}
+
+type PolicySimulationRequest struct {
+	Tool        string         `json:"tool"`
+	Params      map[string]any `json:"params"`
+	ApproveNow  bool           `json:"approve_now"`
+	HealthState string         `json:"health_state"`
+}
+
+type PolicySimulationResponse struct {
+	RiskLevel         RiskLevel    `json:"risk_level"`
+	Decision          DecisionType `json:"decision"`
+	Reason            string       `json:"reason"`
+	RequiredApprovals int          `json:"required_approvals"`
+	HardBlocked       bool         `json:"hard_blocked"`
+}
+
+type Incident struct {
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Severity  string    `json:"severity"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
 }

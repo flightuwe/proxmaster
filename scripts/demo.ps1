@@ -16,6 +16,7 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentT
     tool = "network.apply"
     params = @{ name = "vmbr1"; kind = "bridge"; cidr = "10.20.0.0/24" }
     actor = "demo"
+    idempotency_key = "demo-net-001"
 } | ConvertTo-Json)
 
 Write-Host "3) Reauth token"
@@ -27,4 +28,15 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -Conte
     params = @{ name = "vmbr1"; kind = "bridge"; cidr = "10.20.0.0/24" }
     actor = "demo"
     reauth_token = $reauth.reauth_token
+    hardware_mfa = $true
+    second_approver = "ops-admin"
+    idempotency_key = "demo-net-001"
+} | ConvertTo-Json)
+
+Write-Host "5) Create VM"
+Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "vm.create"
+    params = @{ name = "app-vm-1"; node_id = "node-2"; cpu = 2; memory_mb = 2048; disk_gb = 30 }
+    actor = "demo"
+    idempotency_key = "demo-vm-001"
 } | ConvertTo-Json)

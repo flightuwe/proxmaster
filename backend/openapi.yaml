@@ -1,15 +1,15 @@
 openapi: 3.0.3
 info:
   title: Proxmaster API
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://localhost:8080
 paths:
   /healthz:
     get:
-      summary: Health check
+      summary: Health check with fail-closed gate state
       responses:
-        '200':
+        "200":
           description: OK
   /cluster/overview:
     get:
@@ -17,13 +17,64 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Cluster state
+  /jobs:
+    get:
+      summary: List jobs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Jobs
+  /incidents:
+    get:
+      summary: List incidents
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Incidents
+  /policy/simulate:
+    post:
+      summary: Simulate policy decision for a tool call
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tool:
+                  type: string
+                params:
+                  type: object
+                approve_now:
+                  type: boolean
+      responses:
+        "200":
+          description: Simulation result
+  /policy/explain:
+    get:
+      summary: Explain active policy mode and gates
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Policy explanation
   /mcp/call:
     post:
       summary: Execute MCP tool call
       security:
         - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
       requestBody:
         required: true
         content:
@@ -39,16 +90,22 @@ paths:
                   type: string
                 approve_now:
                   type: boolean
+                idempotency_key:
+                  type: string
+                hardware_mfa:
+                  type: boolean
+                second_approver:
+                  type: string
       responses:
-        '200':
+        "200":
           description: Tool execution result
   /mcp/approve:
     post:
-      summary: Approve and execute hard-blocked operation
+      summary: Approve and execute guarded high-risk operation
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Approval result
 components:
   securitySchemes:

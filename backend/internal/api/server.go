@@ -9,20 +9,22 @@ import (
 	"time"
 
 	"proxmaster/backend/internal/config"
+	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/mcp"
 	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/store"
 )
 
 type Server struct {
-	cfg     config.Config
-	store   *store.MemoryStore
-	mcpSvc  *mcp.Service
-	handler http.Handler
+	cfg      config.Config
+	store    store.Store
+	mcpSvc   *mcp.Service
+	gateEval *health.GateEvaluator
+	handler  http.Handler
 }
 
-func NewServer(cfg config.Config, st *store.MemoryStore, mcpSvc *mcp.Service) *Server {
-	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc}
+func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator) *Server {
+	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval}
 	r := http.NewServeMux()
 	r.HandleFunc("/healthz", s.handleHealth)
 	r.HandleFunc("/auth/login", s.handleLogin)
@@ -30,10 +32,14 @@ func NewServer(cfg config.Config, st *store.MemoryStore, mcpSvc *mcp.Service) *S
 	r.HandleFunc("/auth/reauth", s.handleReauth)
 	r.HandleFunc("/cluster/overview", s.withAuth(s.handleClusterOverview))
 	r.HandleFunc("/nodes", s.withAuth(s.handleNodes))
+	r.HandleFunc("/nodes/heartbeat", s.withAuth(s.handleNodeHeartbeat))
 	r.HandleFunc("/vms", s.withAuth(s.handleVMs))
 	r.HandleFunc("/jobs", s.withAuth(s.handleJobs))
 	r.HandleFunc("/jobs/", s.withAuth(s.handleJobByID))
 	r.HandleFunc("/audit", s.withAuth(s.handleAudit))
+	r.HandleFunc("/incidents", s.withAuth(s.handleIncidents))
+	r.HandleFunc("/policy/simulate", s.withAuth(s.handlePolicySimulate))
+	r.HandleFunc("/policy/explain", s.withAuth(s.handlePolicyExplain))
 	r.HandleFunc("/mcp/call", s.withAuth(s.handleMCPCall))
 	r.HandleFunc("/mcp/approve", s.withAuth(s.handleMCPApprove))
 	s.handler = loggingMiddleware(r)
@@ -43,7 +49,12 @@ func NewServer(cfg config.Config, st *store.MemoryStore, mcpSvc *mcp.Service) *S
 func (s *Server) Handler() http.Handler { return s.handler }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC()})
+	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"time":        time.Now().UTC(),
+		"health_gate": s.gateEval.Explain(snap),
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +64,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mfa_required": true,
-		"challenge_id":  "dev-challenge",
+		"challenge_id": "dev-challenge",
 	})
 }
 
@@ -80,12 +91,39 @@ func (s *Server) handleReauth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleClusterOverview(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"cluster": s.store.ClusterState()})
+	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cluster":     s.store.ClusterState(),
+		"health_gate": s.gateEval.Explain(snap),
+	})
 }
 
 func (s *Server) handleNodes(w http.ResponseWriter, _ *http.Request) {
 	state := s.store.ClusterState()
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": state.Nodes})
+}
+
+func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		NodeID string `json:"node_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.NodeID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing node_id"})
+		return
+	}
+	if ok := s.store.MarkNodeHeartbeat(req.NodeID); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "node not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"changed": true, "node_id": req.NodeID})
 }
 
 func (s *Server) handleVMs(w http.ResponseWriter, _ *http.Request) {
@@ -115,6 +153,33 @@ func (s *Server) handleAudit(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": s.store.ListAudit()})
 }
 
+func (s *Server) handleIncidents(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"incidents": s.store.ListIncidents()})
+}
+
+func (s *Server) handlePolicySimulate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req models.PolicySimulationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	resp := s.mcpSvc.SimulatePolicy(req)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handlePolicyExplain(w http.ResponseWriter, _ *http.Request) {
+	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode":        "SRE_MODE_FAIL_CLOSED",
+		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec"},
+		"health_gate": s.gateEval.Explain(snap),
+	})
+}
+
 func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w)
@@ -129,8 +194,8 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "tool is required"})
 		return
 	}
-	if req.Params == nil {
-		req.Params = map[string]any{}
+	if req.IdempotencyKey == "" {
+		req.IdempotencyKey = r.Header.Get("Idempotency-Key")
 	}
 	resp, err := s.mcpSvc.HandleCall(context.Background(), req)
 	if err != nil {
@@ -146,11 +211,14 @@ func (s *Server) handleMCPApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Tool        string                 `json:"tool"`
-		Params      map[string]any         `json:"params"`
-		Actor       string                 `json:"actor"`
-		ReauthToken string                 `json:"reauth_token"`
-		Metadata    map[string]any         `json:"metadata"`
+		Tool           string                 `json:"tool"`
+		Params         map[string]any         `json:"params"`
+		Actor          string                 `json:"actor"`
+		ReauthToken    string                 `json:"reauth_token"`
+		SecondApprover string                 `json:"second_approver"`
+		HardwareMFA    bool                   `json:"hardware_mfa"`
+		IdempotencyKey string                 `json:"idempotency_key"`
+		Metadata       map[string]any         `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
@@ -161,11 +229,15 @@ func (s *Server) handleMCPApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := s.mcpSvc.HandleCall(context.Background(), models.MCPCallRequest{
-		Tool:       req.Tool,
-		Params:     req.Params,
-		Actor:      req.Actor,
-		ApproveNow: true,
-		Metadata:   req.Metadata,
+		Tool:           req.Tool,
+		Params:         req.Params,
+		Actor:          req.Actor,
+		ApproveNow:     true,
+		ReauthToken:    req.ReauthToken,
+		SecondApprover: req.SecondApprover,
+		HardwareMFA:    req.HardwareMFA,
+		IdempotencyKey: req.IdempotencyKey,
+		Metadata:       req.Metadata,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
