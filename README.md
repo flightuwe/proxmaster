@@ -66,6 +66,23 @@ POST /mcp/approve
 }
 ```
 
+5. Proxmaster nahtlos auf andere Node verschieben:
+```http
+POST /mcp/approve
+Authorization: Bearer <token>
+{
+  "tool": "proxmaster.self_migrate",
+  "params": {
+    "vm_id": "100",
+    "target_node": "node-2",
+    "restart_after_migrate": true
+  },
+  "reauth_token": "reauth-ok",
+  "hardware_mfa": true,
+  "second_approver": "oncall-admin"
+}
+```
+
 ## SRE-mode capabilities implemented
 
 - Job FSM lifecycle (`planned -> approved -> running -> verified -> completed|failed|blocked|aborted|rolled_back`)

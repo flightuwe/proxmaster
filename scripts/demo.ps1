@@ -40,3 +40,14 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentT
     actor = "demo"
     idempotency_key = "demo-vm-001"
 } | ConvertTo-Json)
+
+Write-Host "6) Proxmaster self-migrate to node-2"
+Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "proxmaster.self_migrate"
+    params = @{ vm_id = "100"; target_node = "node-2"; restart_after_migrate = $true }
+    actor = "demo"
+    reauth_token = "reauth-ok"
+    hardware_mfa = $true
+    second_approver = "ops-admin"
+    idempotency_key = "demo-selfmig-001"
+} | ConvertTo-Json)

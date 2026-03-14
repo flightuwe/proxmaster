@@ -37,6 +37,14 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 			return nil, errors.New("missing vm_id or target_node")
 		}
 		return s.px.MigrateVM(ctx, vmID, targetNode)
+	case "proxmaster.self_migrate":
+		vmID, _ := params["vm_id"].(string)
+		targetNode, _ := params["target_node"].(string)
+		restartAfter, _ := params["restart_after_migrate"].(bool)
+		if targetNode == "" {
+			return nil, errors.New("missing target_node")
+		}
+		return s.px.SelfMigrateProxmaster(ctx, vmID, targetNode, restartAfter)
 	case "vm.create":
 		name, _ := params["name"].(string)
 		nodeID, _ := params["node_id"].(string)

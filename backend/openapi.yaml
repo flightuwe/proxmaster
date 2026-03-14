@@ -107,6 +107,8 @@ paths:
       responses:
         "200":
           description: Approval result
+      description: |
+        Supports high-risk tools like `proxmaster.self_migrate` for seamless control-plane switch.
 components:
   securitySchemes:
     bearerAuth:

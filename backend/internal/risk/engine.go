@@ -20,7 +20,7 @@ func (e *Engine) Classify(tool string, params map[string]any) models.RiskLevel {
 		return models.RiskLow
 	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create":
 		return models.RiskMedium
-	case "storage.pool.apply", "storage.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec":
+	case "storage.pool.apply", "storage.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec", "proxmaster.self_migrate":
 		return models.RiskHigh
 	}
 
@@ -70,6 +70,9 @@ func (e *Engine) HardBlockReason(tool string, params map[string]any, risk models
 	}
 	if lowerTool == "updates.rollout_abort" {
 		return true, "rollout abort can cause inconsistent state and is hard-blocked"
+	}
+	if lowerTool == "proxmaster.self_migrate" {
+		return true, "control-plane migration requires explicit dual approval"
 	}
 
 	if lowerTool == "node.runner.exec" {

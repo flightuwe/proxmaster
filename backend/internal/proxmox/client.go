@@ -38,6 +38,59 @@ func (c *Client) MigrateVM(_ context.Context, vmID, targetNode string) (map[stri
 	return map[string]any{"changed": true, "vm_id": vmID, "target_node": targetNode}, nil
 }
 
+func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode string, restartAfter bool) (map[string]any, error) {
+	if vmID == "" {
+		vmID = "100"
+	}
+	if targetNode == "" {
+		return nil, errors.New("missing target_node")
+	}
+
+	state := c.store.ClusterState()
+	var vm *models.VM
+	for i := range state.VMs {
+		if state.VMs[i].ID == vmID {
+			vm = &state.VMs[i]
+			break
+		}
+	}
+	if vm == nil {
+		return nil, errors.New("proxmaster management vm not found")
+	}
+	if vm.NodeID == targetNode {
+		return nil, errors.New("proxmaster already running on target node")
+	}
+
+	targetOnline := false
+	for _, n := range state.Nodes {
+		if n.ID == targetNode && n.Status == "online" {
+			targetOnline = true
+			break
+		}
+	}
+	if !targetOnline {
+		return nil, errors.New("target node is not online")
+	}
+
+	ok := c.store.MigrateVM(vmID, targetNode)
+	if !ok {
+		return nil, errors.New("vm migration failed")
+	}
+
+	return map[string]any{
+		"changed":                true,
+		"action":                 "proxmaster_self_migrate",
+		"management_vm_id":       vmID,
+		"from_node":              vm.NodeID,
+		"to_node":                targetNode,
+		"live_migration":         true,
+		"restart_after_migrate":  restartAfter,
+		"switch_mode":            "seamless_handover",
+		"client_reconnect_hint":  "reconnect API client to cluster VIP or overlay DNS within ~20s",
+		"completed_at_utc":       time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
 func (c *Client) CreateVM(_ context.Context, name, nodeID string, cpu, memoryMB, diskGB int) (map[string]any, error) {
 	if name == "" || nodeID == "" {
 		return nil, errors.New("missing name or node_id")

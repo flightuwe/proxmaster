@@ -20,4 +20,7 @@ func TestClassify(t *testing.T) {
 	if got := e.Classify("vm.create", nil); got != models.RiskMedium {
 		t.Fatalf("expected MEDIUM for vm.create, got %s", got)
 	}
+	if got := e.Classify("proxmaster.self_migrate", nil); got != models.RiskHigh {
+		t.Fatalf("expected HIGH for proxmaster.self_migrate, got %s", got)
+	}
 }

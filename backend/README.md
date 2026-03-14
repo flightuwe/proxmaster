@@ -23,6 +23,7 @@ go run ./cmd/api
 - `cluster.get_state`
 - `node.set_maintenance`
 - `vm.migrate`
+- `proxmaster.self_migrate`
 - `vm.create`
 - `vm.clone_from_template`
 - `lxc.create`
@@ -46,6 +47,24 @@ go run ./cmd/api
 - `LOW` and `MEDIUM` risk: auto-executed
 - `HIGH` risk: approval required (`reauth + hardware_mfa + second_approver`)
 - Fail-closed health gates block writes if quorum/runner health is unsafe
+
+### Seamless Proxmaster switch (self-migrate)
+
+```http
+POST /mcp/approve
+Authorization: Bearer <token>
+{
+  "tool": "proxmaster.self_migrate",
+  "params": {
+    "vm_id": "100",
+    "target_node": "node-2",
+    "restart_after_migrate": true
+  },
+  "reauth_token": "reauth-ok",
+  "hardware_mfa": true,
+  "second_approver": "oncall-admin"
+}
+```
 
 ## Tests
 
