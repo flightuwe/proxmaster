@@ -19,6 +19,45 @@ paths:
       responses:
         "200":
           description: Cluster state
+  /storage/inventory:
+    get:
+      summary: Get unified storage inventory (pools, datastores, tiers, replication, targets)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Storage inventory
+  /storage/rebuild/plan:
+    post:
+      summary: Create rebuild-all-pools plan (guarded)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rebuild plan
+  /backup/policies:
+    get:
+      summary: List backup policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Policies
+    post:
+      summary: Upsert backup policy for a workload
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Policy upserted
+  /backup/targets:
+    get:
+      summary: List backup targets (PBS/NFS/S3)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Targets
   /jobs:
     get:
       summary: List jobs
@@ -107,6 +146,12 @@ paths:
       responses:
         "200":
           description: Tool execution result
+      description: |
+        Includes storage/backup tools:
+        `storage.inventory.sync`, `storage.pool.plan_apply`, `storage.pool.rebuild_all.plan`,
+        `storage.pool.rebuild_all.execute`, `storage.replication.plan_apply`, `storage.health.explain`,
+        `backup.policy.upsert`, `backup.policy.explain`, `backup.run.now`,
+        `backup.restore.plan`, `backup.restore.execute`, `backup.verify.sample`.
   /mcp/approve:
     post:
       summary: Approve and execute guarded high-risk operation

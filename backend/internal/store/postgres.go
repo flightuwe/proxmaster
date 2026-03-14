@@ -190,6 +190,58 @@ func (s *PostgresStore) ListIncidents() []models.Incident {
 	return s.mem.ListIncidents()
 }
 
+func (s *PostgresStore) SyncStorageInventory() map[string]any {
+	return s.mem.SyncStorageInventory()
+}
+
+func (s *PostgresStore) PlanRebuildAllPools() models.StorageRebuildPlan {
+	return s.mem.PlanRebuildAllPools()
+}
+
+func (s *PostgresStore) ExecuteRebuildAllPools(planID string) (models.StorageRebuildPlan, bool) {
+	return s.mem.ExecuteRebuildAllPools(planID)
+}
+
+func (s *PostgresStore) ApplyReplicationPolicy(policy models.ReplicationPolicy) models.ReplicationPolicy {
+	return s.mem.ApplyReplicationPolicy(policy)
+}
+
+func (s *PostgresStore) UpsertBackupTarget(target models.BackupTarget) models.BackupTarget {
+	return s.mem.UpsertBackupTarget(target)
+}
+
+func (s *PostgresStore) ListBackupTargets() []models.BackupTarget {
+	return s.mem.ListBackupTargets()
+}
+
+func (s *PostgresStore) UpsertBackupPolicy(policy models.BackupPolicy) models.BackupPolicy {
+	return s.mem.UpsertBackupPolicy(policy)
+}
+
+func (s *PostgresStore) ListBackupPolicies() []models.BackupPolicy {
+	return s.mem.ListBackupPolicies()
+}
+
+func (s *PostgresStore) ExplainBackupPolicy(workloadID string) (models.BackupPolicy, models.BackupDecisionLog, bool) {
+	return s.mem.ExplainBackupPolicy(workloadID)
+}
+
+func (s *PostgresStore) RunBackupNow(workloadID string) map[string]any {
+	return s.mem.RunBackupNow(workloadID)
+}
+
+func (s *PostgresStore) PlanRestore(workloadID, targetID string) models.RestorePlan {
+	return s.mem.PlanRestore(workloadID, targetID)
+}
+
+func (s *PostgresStore) ExecuteRestore(planID string) (models.RestorePlan, bool) {
+	return s.mem.ExecuteRestore(planID)
+}
+
+func (s *PostgresStore) VerifyBackupSample() map[string]any {
+	return s.mem.VerifyBackupSample()
+}
+
 func nullable(sv string) any {
 	if sv == "" {
 		return nil

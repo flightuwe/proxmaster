@@ -23,4 +23,7 @@ func TestClassify(t *testing.T) {
 	if got := e.Classify("proxmaster.self_migrate", nil); got != models.RiskHigh {
 		t.Fatalf("expected HIGH for proxmaster.self_migrate, got %s", got)
 	}
+	if got := e.Classify("storage.pool.rebuild_all.execute", nil); got != models.RiskHigh {
+		t.Fatalf("expected HIGH for rebuild all execute, got %s", got)
+	}
 }

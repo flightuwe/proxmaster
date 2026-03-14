@@ -54,3 +54,45 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -Conte
 
 Write-Host "7) Active control-plane endpoint"
 Invoke-RestMethod -Method Get -Uri "$base/controlplane/endpoint" -Headers $headers
+
+Write-Host "8) Storage inventory sync"
+Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "storage.inventory.sync"
+    params = @{}
+    actor = "demo"
+    idempotency_key = "demo-storage-sync-001"
+} | ConvertTo-Json)
+
+Write-Host "9) Rebuild all pools plan"
+$rebuildPlanResp = Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "storage.pool.rebuild_all.plan"
+    params = @{}
+    actor = "demo"
+    reauth_token = "reauth-ok"
+    hardware_mfa = $true
+    second_approver = "ops-admin"
+    idempotency_key = "demo-rebuild-plan-001"
+} | ConvertTo-Json)
+
+Write-Host "10) Backup policy upsert for VM 101"
+Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "backup.policy.upsert"
+    params = @{
+      workload_id = "101"
+      workload_kind = "vm"
+      priority = 200
+      override = $true
+      schedule = "0 2 * * *"
+      target_id = "target-pbs-1"
+      rpo = "24h"
+      retention = "30d"
+      encryption = $true
+      immutability = $true
+      verify_restore = $true
+    }
+    actor = "demo"
+    reauth_token = "reauth-ok"
+    hardware_mfa = $true
+    second_approver = "ops-admin"
+    idempotency_key = "demo-policy-upsert-001"
+} | ConvertTo-Json -Depth 5)

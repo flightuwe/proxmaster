@@ -21,4 +21,17 @@ type Store interface {
 	CloneVM(templateID, newID, targetNode, name string) (models.VM, bool)
 	ApplyPool(name, poolType string)
 	ApplyNetwork(name, kind, cidr string)
+	SyncStorageInventory() map[string]any
+	PlanRebuildAllPools() models.StorageRebuildPlan
+	ExecuteRebuildAllPools(planID string) (models.StorageRebuildPlan, bool)
+	ApplyReplicationPolicy(policy models.ReplicationPolicy) models.ReplicationPolicy
+	UpsertBackupTarget(target models.BackupTarget) models.BackupTarget
+	ListBackupTargets() []models.BackupTarget
+	UpsertBackupPolicy(policy models.BackupPolicy) models.BackupPolicy
+	ListBackupPolicies() []models.BackupPolicy
+	ExplainBackupPolicy(workloadID string) (models.BackupPolicy, models.BackupDecisionLog, bool)
+	RunBackupNow(workloadID string) map[string]any
+	PlanRestore(workloadID, targetID string) models.RestorePlan
+	ExecuteRestore(planID string) (models.RestorePlan, bool)
+	VerifyBackupSample() map[string]any
 }

@@ -35,6 +35,12 @@ go run ./cmd/api
 - `lxc.create`
 - `storage.pool.apply`
 - `storage.plan_apply`
+- `storage.inventory.sync`
+- `storage.pool.plan_apply`
+- `storage.pool.rebuild_all.plan`
+- `storage.pool.rebuild_all.execute`
+- `storage.replication.plan_apply`
+- `storage.health.explain`
 - `network.apply`
 - `network.plan_apply`
 - `updates.plan`
@@ -47,6 +53,14 @@ go run ./cmd/api
 - `policy.simulate`
 - `policy.explain`
 - `node.runner.exec`
+- `backup.policy.upsert`
+- `backup.policy.explain`
+- `backup.run.now`
+- `backup.restore.plan`
+- `backup.restore.execute`
+- `backup.verify.sample`
+- `backup.policy.list`
+- `backup.target.list`
 
 ## Guarded Auto behavior
 
@@ -78,6 +92,13 @@ Danach aktiven Endpoint pruefen:
 GET /controlplane/endpoint
 Authorization: Bearer <token>
 ```
+
+## Storage and backup focus
+
+- Unified inventory for mixed stacks (`zfs`, `ceph`, `nfs/smb`)
+- Rebuild-all workflow via MCP tools (`plan -> execute`) with guarded approval
+- Per-workload backup policy model (`priority + override + decision log`)
+- Restore planning/execution and sample restore verification
 
 ## Tests
 

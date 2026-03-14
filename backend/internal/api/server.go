@@ -36,6 +36,10 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/nodes", s.withAuth(s.handleNodes))
 	r.HandleFunc("/nodes/heartbeat", s.withAuth(s.handleNodeHeartbeat))
 	r.HandleFunc("/vms", s.withAuth(s.handleVMs))
+	r.HandleFunc("/storage/inventory", s.withAuth(s.handleStorageInventory))
+	r.HandleFunc("/storage/rebuild/plan", s.withAuth(s.handleStorageRebuildPlan))
+	r.HandleFunc("/backup/policies", s.withAuth(s.handleBackupPolicies))
+	r.HandleFunc("/backup/targets", s.withAuth(s.handleBackupTargets))
 	r.HandleFunc("/jobs", s.withAuth(s.handleJobs))
 	r.HandleFunc("/jobs/", s.withAuth(s.handleJobByID))
 	r.HandleFunc("/audit", s.withAuth(s.handleAudit))
@@ -142,6 +146,45 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVMs(w http.ResponseWriter, _ *http.Request) {
 	state := s.store.ClusterState()
 	writeJSON(w, http.StatusOK, map[string]any{"vms": state.VMs})
+}
+
+func (s *Server) handleStorageInventory(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.store.SyncStorageInventory())
+}
+
+func (s *Server) handleStorageRebuildPlan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	plan := s.store.PlanRebuildAllPools()
+	writeJSON(w, http.StatusOK, map[string]any{"plan": plan, "requires_approval": true})
+}
+
+func (s *Server) handleBackupPolicies(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"policies": s.store.ListBackupPolicies()})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req models.BackupPolicy
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.WorkloadID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "workload_id is required"})
+		return
+	}
+	p := s.store.UpsertBackupPolicy(req)
+	writeJSON(w, http.StatusOK, map[string]any{"policy": p})
+}
+
+func (s *Server) handleBackupTargets(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"targets": s.store.ListBackupTargets()})
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, _ *http.Request) {

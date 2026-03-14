@@ -95,6 +95,9 @@ Authorization: Bearer <token>
 - Guarded high-risk operations with dual approval metadata
 - PostgreSQL-backed durable logs (jobs, audits, incidents) via `PROXMASTER_STORE_BACKEND=postgres`
 - Node runner-agent binary for allowlisted host operations (`backend/cmd/runner-agent`)
+- Storage control plane for mixed pools (`ZFS + Ceph + NFS/SMB`)
+- Rebuild-all-pools planning/execution hooks with guarded approvals
+- Per-workload backup policies and restore plan flows for VM/LXC
 
 ## Remaining production hardening
 

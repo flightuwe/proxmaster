@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/proxmox"
 	"proxmaster/backend/internal/runner"
 )
@@ -68,7 +69,40 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 		if name == "" || poolType == "" {
 			return nil, errors.New("missing name or type")
 		}
+		if tool == "storage.plan_apply" {
+			return s.px.PlanApplyStoragePool(ctx, name, poolType)
+		}
 		return s.px.ApplyStoragePool(ctx, name, poolType)
+	case "storage.inventory.sync":
+		return s.px.SyncStorageInventory(ctx)
+	case "storage.pool.rebuild_all.plan":
+		return s.px.PlanRebuildAllPools(ctx)
+	case "storage.pool.rebuild_all.execute":
+		planID, _ := params["plan_id"].(string)
+		if planID == "" {
+			return nil, errors.New("missing plan_id")
+		}
+		return s.px.ExecuteRebuildAllPools(ctx, planID)
+	case "storage.replication.plan_apply":
+		policyID, _ := params["id"].(string)
+		name, _ := params["name"].(string)
+		source, _ := params["source_pool"].(string)
+		target, _ := params["target_pool"].(string)
+		schedule, _ := params["schedule"].(string)
+		compression, _ := params["compression"].(string)
+		verifyAfter, _ := params["verify_after"].(bool)
+		return s.px.ApplyReplicationPolicy(ctx, models.ReplicationPolicy{
+			ID:          policyID,
+			Name:        name,
+			SourcePool:  source,
+			TargetPool:  target,
+			Schedule:    schedule,
+			Compression: compression,
+			VerifyAfter: verifyAfter,
+			Status:      "active",
+		})
+	case "storage.health.explain":
+		return s.px.SyncStorageInventory(ctx)
 	case "network.apply", "network.plan_apply":
 		name, _ := params["name"].(string)
 		kind, _ := params["kind"].(string)
@@ -102,6 +136,50 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 			return nil, errors.New("missing node_id or command")
 		}
 		return s.runner.Execute(ctx, nodeID, command, args)
+	case "backup.policy.upsert":
+		workloadID, _ := params["workload_id"].(string)
+		workloadKind, _ := params["workload_kind"].(string)
+		schedule, _ := params["schedule"].(string)
+		targetID, _ := params["target_id"].(string)
+		rpo, _ := params["rpo"].(string)
+		retention, _ := params["retention"].(string)
+		encryption, _ := params["encryption"].(bool)
+		immutability, _ := params["immutability"].(bool)
+		verifyRestore, _ := params["verify_restore"].(bool)
+		override, _ := params["override"].(bool)
+		return s.px.UpsertBackupPolicy(ctx, models.BackupPolicy{
+			ID:            stringFrom(params["id"]),
+			WorkloadID:    workloadID,
+			WorkloadKind:  workloadKind,
+			Priority:      intFrom(params["priority"], 100),
+			Override:      override,
+			Schedule:      schedule,
+			TargetID:      targetID,
+			RPO:           rpo,
+			Retention:     retention,
+			Encryption:    encryption,
+			Immutability:  immutability,
+			VerifyRestore: verifyRestore,
+		})
+	case "backup.policy.explain":
+		workloadID, _ := params["workload_id"].(string)
+		return s.px.ExplainBackupPolicy(ctx, workloadID)
+	case "backup.run.now":
+		workloadID, _ := params["workload_id"].(string)
+		return s.px.RunBackupNow(ctx, workloadID)
+	case "backup.restore.plan":
+		workloadID, _ := params["workload_id"].(string)
+		targetID, _ := params["target_id"].(string)
+		return s.px.PlanRestore(ctx, workloadID, targetID)
+	case "backup.restore.execute":
+		planID, _ := params["plan_id"].(string)
+		return s.px.ExecuteRestore(ctx, planID)
+	case "backup.verify.sample":
+		return s.px.VerifyBackupSample(ctx)
+	case "backup.policy.list":
+		return s.px.ListBackupPolicies(ctx)
+	case "backup.target.list":
+		return s.px.ListBackupTargets(ctx)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", tool)
 	}
@@ -116,4 +194,11 @@ func intFrom(v any, fallback int) int {
 	default:
 		return fallback
 	}
+}
+
+func stringFrom(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

@@ -61,12 +61,16 @@ type AuditEvent struct {
 }
 
 type ClusterState struct {
-	Nodes     []Node           `json:"nodes"`
-	VMs       []VM             `json:"vms"`
-	Pools     []StoragePool    `json:"pools"`
-	Networks  []NetworkObject  `json:"networks"`
-	HAEnabled bool             `json:"ha_enabled"`
-	UpdatedAt time.Time        `json:"updated_at"`
+	Nodes              []Node              `json:"nodes"`
+	VMs                []VM                `json:"vms"`
+	Pools              []StoragePool       `json:"pools"`
+	Datastores         []Datastore         `json:"datastores"`
+	SnapshotTiers      []SnapshotTier      `json:"snapshot_tiers"`
+	ReplicationPolicies []ReplicationPolicy `json:"replication_policies"`
+	BackupTargets      []BackupTarget      `json:"backup_targets"`
+	Networks           []NetworkObject     `json:"networks"`
+	HAEnabled          bool                `json:"ha_enabled"`
+	UpdatedAt          time.Time           `json:"updated_at"`
 }
 
 type Node struct {
@@ -91,9 +95,94 @@ type VM struct {
 }
 
 type StoragePool struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Backend    string `json:"backend"`
+	Status     string `json:"status"`
+	CapacityGB int    `json:"capacity_gb"`
+	UsedGB     int    `json:"used_gb"`
+	Tier       string `json:"tier"`
+}
+
+type Datastore struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	PoolName string `json:"pool_name"`
+	Path     string `json:"path"`
+	Status   string `json:"status"`
+}
+
+type SnapshotTier struct {
+	Name            string `json:"name"`
+	Frequency       string `json:"frequency"`
+	Retention       string `json:"retention"`
+	Immutable       bool   `json:"immutable"`
+	TargetDatastore string `json:"target_datastore"`
+}
+
+type ReplicationPolicy struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	SourcePool    string `json:"source_pool"`
+	TargetPool    string `json:"target_pool"`
+	Schedule      string `json:"schedule"`
+	Compression   string `json:"compression"`
+	VerifyAfter   bool   `json:"verify_after"`
+	Status        string `json:"status"`
+}
+
+type BackupTarget struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	URI     string `json:"uri"`
+	Healthy bool   `json:"healthy"`
+}
+
+type BackupPolicy struct {
+	ID             string    `json:"id"`
+	WorkloadID     string    `json:"workload_id"`
+	WorkloadKind   string    `json:"workload_kind"`
+	Priority       int       `json:"priority"`
+	Override       bool      `json:"override"`
+	Schedule       string    `json:"schedule"`
+	TargetID       string    `json:"target_id"`
+	RPO            string    `json:"rpo"`
+	Retention      string    `json:"retention"`
+	Encryption     bool      `json:"encryption"`
+	Immutability   bool      `json:"immutability"`
+	VerifyRestore  bool      `json:"verify_restore"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type BackupDecisionLog struct {
+	ID          string    `json:"id"`
+	WorkloadID  string    `json:"workload_id"`
+	PolicyID    string    `json:"policy_id"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type StorageRebuildPlan struct {
+	ID                 string    `json:"id"`
+	PoolNames          []string  `json:"pool_names"`
+	AffectedWorkloads  []string  `json:"affected_workloads"`
+	EstimatedDowntime  string    `json:"estimated_downtime"`
+	CanaryPool         string    `json:"canary_pool"`
+	GuardrailSummary   string    `json:"guardrail_summary"`
+	RollbackSteps      []string  `json:"rollback_steps"`
+	DryRunPassed       bool      `json:"dry_run_passed"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+type RestorePlan struct {
+	ID             string    `json:"id"`
+	WorkloadID     string    `json:"workload_id"`
+	BackupTargetID string    `json:"backup_target_id"`
+	SnapshotRef    string    `json:"snapshot_ref"`
+	DryRunPassed   bool      `json:"dry_run_passed"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type NetworkObject struct {

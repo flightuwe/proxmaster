@@ -18,9 +18,9 @@ func (e *Engine) Classify(tool string, params map[string]any) models.RiskLevel {
 	switch tool {
 	case "cluster.get_state":
 		return models.RiskLow
-	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create":
+	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create", "storage.inventory.sync", "storage.health.explain", "backup.policy.explain", "backup.policy.list", "backup.target.list":
 		return models.RiskMedium
-	case "storage.pool.apply", "storage.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec", "proxmaster.self_migrate":
+	case "storage.pool.apply", "storage.plan_apply", "storage.pool.rebuild_all.plan", "storage.pool.rebuild_all.execute", "storage.replication.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec", "proxmaster.self_migrate", "backup.policy.upsert", "backup.run.now", "backup.restore.plan", "backup.restore.execute", "backup.verify.sample":
 		return models.RiskHigh
 	}
 
@@ -62,6 +62,15 @@ func (e *Engine) HardBlockReason(tool string, params map[string]any, risk models
 		}
 		return true, "storage pool mutations require explicit approval"
 	}
+	if lowerTool == "storage.pool.rebuild_all.plan" {
+		return true, "rebuild-all planning is guarded and requires explicit approval"
+	}
+	if lowerTool == "storage.pool.rebuild_all.execute" {
+		return true, "rebuild-all execution always requires explicit dual approval"
+	}
+	if lowerTool == "storage.replication.plan_apply" {
+		return true, "replication policy changes require explicit approval"
+	}
 	if lowerTool == "updates.rollout_start" || lowerTool == "updates.canary_start" || lowerTool == "updates.rollout_continue" {
 		if count, ok := params["node_count"].(float64); ok && count >= 2 {
 			return true, fmt.Sprintf("rolling update affecting %.0f nodes is hard-blocked", count)
@@ -77,6 +86,9 @@ func (e *Engine) HardBlockReason(tool string, params map[string]any, risk models
 
 	if lowerTool == "node.runner.exec" {
 		return true, "host-level runner execution requires explicit approval"
+	}
+	if strings.HasPrefix(lowerTool, "backup.") {
+		return true, "backup and restore mutations require explicit approval"
 	}
 
 	return true, "high-risk action requires second approval"
