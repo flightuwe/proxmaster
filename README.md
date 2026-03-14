@@ -6,6 +6,19 @@ Proxmaster is a bootstrap-ready Proxmox management stack:
 - `android/`: Kotlin Android app skeleton for remote administration
 - `infra/`: Docker Compose and bootstrap docs for Node 1 management VM and runner agent
 
+## One-command Node1 installation
+
+Auf der Node1-Management-VM (Ubuntu, als `root`/`sudo`) nur diesen Befehl ausführen:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/flightuwe/proxmaster/main/infra/bootstrap/install-node1.sh | sudo bash
+```
+
+Danach führt dich ein Menü:
+- `Quick Install (Empfohlen)`
+- `Custom Install`
+- `Update bestehender Stack`
+
 ## Quick start (backend)
 
 ```powershell

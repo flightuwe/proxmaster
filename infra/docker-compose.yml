@@ -9,12 +9,12 @@ services:
     volumes:
       - ../:/app
     environment:
-      PROXMASTER_LISTEN_ADDR: ":8080"
-      PROXMASTER_ADMIN_TOKEN: "dev-admin-token"
-      PROXMASTER_STORE_BACKEND: "postgres"
-      PROXMASTER_POSTGRES_DSN: "postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
-      PROXMASTER_FAIL_CLOSED: "true"
-      PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC: "120"
+      PROXMASTER_LISTEN_ADDR: "${PROXMASTER_LISTEN_ADDR:-:8080}"
+      PROXMASTER_ADMIN_TOKEN: "${PROXMASTER_ADMIN_TOKEN:-dev-admin-token}"
+      PROXMASTER_STORE_BACKEND: "${PROXMASTER_STORE_BACKEND:-postgres}"
+      PROXMASTER_POSTGRES_DSN: "${PROXMASTER_POSTGRES_DSN:-postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable}"
+      PROXMASTER_FAIL_CLOSED: "${PROXMASTER_FAIL_CLOSED:-true}"
+      PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC: "${PROXMASTER_RUNNER_HEARTBEAT_MAX_SEC:-120}"
     ports:
       - "8080:8080"
     depends_on:
@@ -59,9 +59,9 @@ services:
     volumes:
       - ../:/app
     environment:
-      RUNNER_LISTEN_ADDR: ":9091"
-      RUNNER_NODE_ID: "node-1"
-      RUNNER_SHARED_SECRET: "dev-runner-secret"
+      RUNNER_LISTEN_ADDR: "${RUNNER_LISTEN_ADDR:-:9091}"
+      RUNNER_NODE_ID: "${RUNNER_NODE_ID:-node-1}"
+      RUNNER_SHARED_SECRET: "${RUNNER_SHARED_SECRET:-dev-runner-secret}"
     ports:
       - "9091:9091"
 
