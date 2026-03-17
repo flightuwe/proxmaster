@@ -58,7 +58,11 @@ func (s *Service) HandleCall(ctx context.Context, req models.MCPCallRequest) (mo
 	riskLevel := s.riskEngine.Classify(req.Tool, req.Params)
 	hardBlocked, hardReason := s.riskEngine.HardBlockReason(req.Tool, req.Params, riskLevel)
 	snapshot := s.gateEval.SnapshotFromState(s.store.ClusterState())
-	gateOK, gateReason := s.gateEval.ValidateForWrite(snapshot)
+	gateOK, gateReason := true, ""
+	// Fail-closed health gates must block mutating operations, but not low-risk read-only calls.
+	if riskLevel != models.RiskLow {
+		gateOK, gateReason = s.gateEval.ValidateForWrite(snapshot)
+	}
 
 	decision := s.policyGate.Evaluate(
 		riskLevel,
