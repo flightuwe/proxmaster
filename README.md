@@ -38,6 +38,7 @@ Neu fuer Remote-Cluster-Betrieb:
 - `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 - `pm up` repariert bei Bedarf auch Repo-/Docker-Rechte automatisch via `sudo`
 - `pm up` installiert fehlende WireGuard-Tools automatisch (`wireguard`, `wireguard-tools`)
+- `pm up` macht immer `fetch --all --prune`, `reset --hard origin/main`, `clean -fd` und refreshed die Wrapper (`/usr/local/bin/pm`, `proxmaster`)
 - One-command bootstrap: `pm bootstrap quick` (non-interactive)
 - Network helper: `pm ip` (zeigt lokale IPv4 + direkte Test-URLs)
 

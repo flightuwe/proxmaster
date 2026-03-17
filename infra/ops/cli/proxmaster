@@ -54,14 +54,19 @@ install_wrappers() {
   if [ ! -f "$src" ]; then
     return
   fi
+  local installed="false"
   if [ -w /usr/local/bin ]; then
-    install -m 0755 "$src" /usr/local/bin/pm || true
-    install -m 0755 "$src" /usr/local/bin/proxmaster || true
-    return
+    if install -m 0755 "$src" /usr/local/bin/pm && install -m 0755 "$src" /usr/local/bin/proxmaster; then
+      installed="true"
+    fi
   fi
-  if command -v sudo >/dev/null 2>&1; then
-    sudo install -m 0755 "$src" /usr/local/bin/pm >/dev/null 2>&1 || true
-    sudo install -m 0755 "$src" /usr/local/bin/proxmaster >/dev/null 2>&1 || true
+  if [ "$installed" = "false" ] && command -v sudo >/dev/null 2>&1; then
+    if sudo install -m 0755 "$src" /usr/local/bin/pm && sudo install -m 0755 "$src" /usr/local/bin/proxmaster; then
+      installed="true"
+    fi
+  fi
+  if [ "$installed" = "false" ]; then
+    echo "[proxmaster] warning: could not refresh /usr/local/bin wrappers (pm/proxmaster)" >&2
   fi
 }
 
@@ -138,12 +143,13 @@ cmd_update() {
     git -C "$INSTALL_DIR" diff >"$backup_file" || true
     echo "[proxmaster] local changes detected; backup written to $backup_file"
     git -C "$INSTALL_DIR" reset --hard HEAD
-    git -C "$INSTALL_DIR" clean -fd
   fi
 
-  git -C "$INSTALL_DIR" fetch origin main --prune
+  # Always force-sync with remote to avoid stale wrappers and drift on long-lived VMs.
+  git -C "$INSTALL_DIR" fetch --all --prune
   git -C "$INSTALL_DIR" checkout main
   git -C "$INSTALL_DIR" reset --hard origin/main
+  git -C "$INSTALL_DIR" clean -fd
   install_wrappers
   if [ -f "$INSTALL_DIR/backend/go.mod" ]; then
     local db
