@@ -56,8 +56,12 @@ func NewController() *Controller {
 			"shell_script":      true,
 		},
 		nodeEndpoint: endpoints,
-		sharedSecret: envOr("RUNNER_SHARED_SECRET", "dev-runner-secret"),
-		httpClient:   &http.Client{Timeout: 120 * time.Second},
+		sharedSecret: firstNonEmpty(
+			os.Getenv("RUNNER_SHARED_SECRET"),
+			os.Getenv("PROXMASTER_RUNNER_SHARED_SECRET"),
+			"dev-runner-secret",
+		),
+		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -113,11 +117,13 @@ func (c *Controller) sign(req execRequest) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
 	}
-	return fallback
+	return ""
 }
 
 func (c *Controller) Allowlist() []string {
