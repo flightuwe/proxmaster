@@ -8,6 +8,8 @@ INSTALLER_SCRIPT="${PROXMASTER_INSTALLER_SCRIPT:-$INSTALL_DIR/infra/bootstrap/in
 API_BASE="${PROXMASTER_API_BASE_URL:-http://127.0.0.1:8080}"
 AUTO_INSTALL_WG_TOOLS="${PROXMASTER_AUTO_INSTALL_WIREGUARD_TOOLS:-true}"
 WG_INSTALL_RETRIES="${PROXMASTER_WIREGUARD_INSTALL_RETRIES:-3}"
+WAIT_WRITES_MAX_TRIES="${PROXMASTER_WAIT_WRITES_MAX_TRIES:-30}"
+HEARTBEAT_NODES="${PROXMASTER_HEARTBEAT_NODES:-node-1,node-2,node-3,node-4}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -152,9 +154,41 @@ wait_health() {
   return 1
 }
 
+wait_writes_gate() {
+  local max_tries="${1:-$WAIT_WRITES_MAX_TRIES}"
+  local sleep_sec="${2:-2}"
+  local i
+  local t
+  t="$(token)"
+  for i in $(seq 1 "$max_tries"); do
+    if curl -fsS -H "Authorization: Bearer $t" "$API_BASE/healthz" | jq -e '.health_gate.allow_writes == true' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_sec"
+  done
+  return 1
+}
+
+seed_heartbeats() {
+  local t
+  t="$(token)"
+  local node
+  local list
+  list="$(echo "$HEARTBEAT_NODES" | tr ',' ' ')"
+  for node in $list; do
+    node="$(echo "$node" | xargs)"
+    if [ -z "$node" ]; then
+      continue
+    fi
+    curl -fsS -X POST -H "Authorization: Bearer $t" -H "Content-Type: application/json" \
+      "$API_BASE/nodes/heartbeat" -d "{\"node_id\":\"$node\"}" >/dev/null 2>&1 || true
+  done
+}
+
 cmd_update() {
   need_cmd git
   need_cmd docker
+  need_cmd jq
   ensure_env
   git config --global --add safe.directory "$INSTALL_DIR" >/dev/null 2>&1 || true
   ensure_repo_writable
@@ -199,6 +233,10 @@ cmd_update() {
     echo "[proxmaster] API not healthy after deploy. Last logs:" >&2
     compose logs --tail=120 proxmaster-api >&2 || true
     exit 1
+  fi
+  seed_heartbeats
+  if ! wait_writes_gate "$WAIT_WRITES_MAX_TRIES" 2; then
+    echo "[proxmaster] warning: write gate still closed after update (runner heartbeat/quorum issue)" >&2
   fi
   echo "[proxmaster] update done"
 }
@@ -309,7 +347,26 @@ api_call() {
 
 cmd_wg_status() {
   need_cmd jq
-  api_call GET /connectivity/status | jq '.wireguard // .'
+  local data
+  data="$(api_call GET /connectivity/status | jq '.wireguard // .')"
+  local iface
+  iface="$(echo "$data" | jq -r '.wireguard_interface // "wg0"')"
+  local reason
+  reason="$(echo "$data" | jq -r '.reason // ""')"
+
+  if [[ "$reason" == *"unavailable"* || "$reason" == *"no permission"* ]]; then
+    local host_raw=""
+    if command -v wg >/dev/null 2>&1; then
+      if host_raw="$(wg show "$iface" 2>/dev/null)"; then
+        data="$(echo "$data" | jq --arg iface "$iface" --arg txt "$host_raw" '. + {host_check:{interface:$iface, available:true, detail:$txt}}')"
+      elif command -v sudo >/dev/null 2>&1 && host_raw="$(sudo wg show "$iface" 2>/dev/null)"; then
+        data="$(echo "$data" | jq --arg iface "$iface" --arg txt "$host_raw" '. + {host_check:{interface:$iface, available:true, detail:$txt}}')"
+      else
+        data="$(echo "$data" | jq --arg iface "$iface" '. + {host_check:{interface:$iface, available:false}}')"
+      fi
+    fi
+  fi
+  echo "$data" | jq .
 }
 
 cmd_wg_plan() {
@@ -328,6 +385,23 @@ cmd_wg_apply() {
   local payload
   payload="$(jq -nc --arg cpk "$client_public_key" --arg ep "$endpoint" '{actor:"cli-admin",client_public_key:$cpk,server_endpoint:$ep,reauth_token:"reauth-ok",hardware_mfa:true,second_approver:"cli-admin"}')"
   api_call POST /vpn/wireguard/apply "$payload" | jq .
+}
+
+cmd_mcp() {
+  need_cmd jq
+  local tool="${1:-}"
+  local params="${2:-{}}"
+  if [ -z "$tool" ]; then
+    echo "Usage: proxmaster mcp <tool> [json_params]" >&2
+    exit 1
+  fi
+  if ! echo "$params" | jq -e . >/dev/null 2>&1; then
+    echo "[proxmaster] invalid json params: $params" >&2
+    exit 1
+  fi
+  local payload
+  payload="$(jq -nc --arg t "$tool" --argjson p "$params" '{tool:$t, params:$p, actor:"cli-admin"}')"
+  api_call POST /mcp/call "$payload" | jq .
 }
 
 usage() {
@@ -351,6 +425,7 @@ Commands:
   wg-status            WireGuard status
   wg-plan              WireGuard plan/template output
   wg-apply             Apply WireGuard config (guarded)
+  mcp                  Execute MCP tool call (mcp <tool> [json_params])
   bootstrap [quick]    One-command VM bootstrap (non-interactive quick mode)
   help                 Show this help
 EOF
@@ -370,6 +445,7 @@ main() {
     wgs) cmd="wg-status" ;;
     wgp) cmd="wg-plan" ;;
     wga) cmd="wg-apply" ;;
+    mc) cmd="mcp" ;;
     bs) cmd="bootstrap" ;;
   esac
   case "$cmd" in
@@ -383,6 +459,7 @@ main() {
     wg-status) cmd_wg_status "$@" ;;
     wg-plan) cmd_wg_plan "$@" ;;
     wg-apply) cmd_wg_apply "$@" ;;
+    mcp) cmd_mcp "$@" ;;
     bootstrap) cmd_bootstrap "$@" ;;
     help|-h|--help) usage ;;
     *)

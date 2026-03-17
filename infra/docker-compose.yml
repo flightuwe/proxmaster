@@ -89,8 +89,14 @@ services:
       RUNNER_LISTEN_ADDR: "${RUNNER_LISTEN_ADDR:-:9091}"
       RUNNER_NODE_ID: "${RUNNER_NODE_ID:-node-1}"
       RUNNER_SHARED_SECRET: "${RUNNER_SHARED_SECRET:-dev-runner-secret}"
+      RUNNER_API_BASE_URL: "${RUNNER_API_BASE_URL:-http://proxmaster-api:8080}"
+      RUNNER_ADMIN_TOKEN: "${RUNNER_ADMIN_TOKEN:-${PROXMASTER_ADMIN_TOKEN:-dev-admin-token}}"
+      RUNNER_HEARTBEAT_NODES: "${RUNNER_HEARTBEAT_NODES:-node-1,node-2,node-3,node-4}"
+      RUNNER_HEARTBEAT_INTERVAL_SEC: "${RUNNER_HEARTBEAT_INTERVAL_SEC:-30}"
     ports:
       - "9091:9091"
+    depends_on:
+      - proxmaster-api
 
 volumes:
   pgdata:

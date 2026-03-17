@@ -239,3 +239,27 @@ type Incident struct {
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type AgentTaskStatus string
+
+const (
+	AgentTaskQueued    AgentTaskStatus = "QUEUED"
+	AgentTaskRunning   AgentTaskStatus = "RUNNING"
+	AgentTaskCompleted AgentTaskStatus = "COMPLETED"
+	AgentTaskFailed    AgentTaskStatus = "FAILED"
+)
+
+type AgentTask struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Payload     map[string]any         `json:"payload,omitempty"`
+	Status      AgentTaskStatus        `json:"status"`
+	RequestedBy string                 `json:"requested_by"`
+	Result      map[string]any         `json:"result,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	Attempts    int                    `json:"attempts"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	StartedAt   *time.Time             `json:"started_at,omitempty"`
+	FinishedAt  *time.Time             `json:"finished_at,omitempty"`
+}

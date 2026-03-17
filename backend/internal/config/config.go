@@ -36,6 +36,8 @@ type Config struct {
 	WireGuardConfigPath   string
 	WireGuardKeysDir      string
 	WireGuardListenPort   int
+	AgentToken            string
+	AgentAPIPollSec       int
 }
 
 func Load() Config {
@@ -70,6 +72,8 @@ func Load() Config {
 		WireGuardConfigPath:   envOr("PROXMASTER_WIREGUARD_CONFIG_PATH", "/etc/wireguard/wg0.conf"),
 		WireGuardKeysDir:      envOr("PROXMASTER_WIREGUARD_KEYS_DIR", "/etc/proxmaster/wireguard"),
 		WireGuardListenPort:   envOrInt("PROXMASTER_WIREGUARD_LISTEN_PORT", 51820),
+		AgentToken:            envOr("PROXMASTER_AGENT_TOKEN", "dev-agent-token"),
+		AgentAPIPollSec:       envOrInt("PROXMASTER_AGENT_POLL_SEC", 5),
 	}
 	return cfg
 }
