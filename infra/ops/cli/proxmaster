@@ -6,6 +6,7 @@ ENV_FILE="${PROXMASTER_ENV_FILE:-$INSTALL_DIR/infra/.env}"
 COMPOSE_FILE="${PROXMASTER_COMPOSE_FILE:-$INSTALL_DIR/infra/docker-compose.yml}"
 INSTALLER_SCRIPT="${PROXMASTER_INSTALLER_SCRIPT:-$INSTALL_DIR/infra/bootstrap/install-node1.sh}"
 API_BASE="${PROXMASTER_API_BASE_URL:-http://127.0.0.1:8080}"
+AUTO_INSTALL_WG_TOOLS="${PROXMASTER_AUTO_INSTALL_WIREGUARD_TOOLS:-true}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -80,6 +81,26 @@ ensure_repo_writable() {
   fi
 }
 
+ensure_wireguard_tools() {
+  if [ "$AUTO_INSTALL_WG_TOOLS" != "true" ]; then
+    return
+  fi
+  if command -v wg >/dev/null 2>&1; then
+    return
+  fi
+  echo "[proxmaster] wireguard tools missing; installing ..."
+  if command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update -y >/dev/null 2>&1 || true
+    sudo apt-get install -y wireguard wireguard-tools >/dev/null 2>&1 || true
+  elif [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    apt-get update -y >/dev/null 2>&1 || true
+    apt-get install -y wireguard wireguard-tools >/dev/null 2>&1 || true
+  fi
+  if ! command -v wg >/dev/null 2>&1; then
+    echo "[proxmaster] warning: wireguard tools still unavailable (install manually if needed)" >&2
+  fi
+}
+
 wait_health() {
   local max_tries="${1:-30}"
   local sleep_sec="${2:-2}"
@@ -133,6 +154,7 @@ cmd_update() {
       docker run --rm -v "$INSTALL_DIR/backend:/src" -w /src golang:1.22 go mod tidy >/dev/null 2>&1 || true
     fi
   fi
+  ensure_wireguard_tools
   compose up -d --build
   if ! wait_health 45 2; then
     echo "[proxmaster] API not healthy after deploy. Last logs:" >&2

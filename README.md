@@ -37,6 +37,7 @@ Neu fuer Remote-Cluster-Betrieb:
 - WireGuard CLI: `pm wg-status`, `pm wg-plan`, `pm wg-apply <client_pubkey> <endpoint>`
 - `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 - `pm up` repariert bei Bedarf auch Repo-/Docker-Rechte automatisch via `sudo`
+- `pm up` installiert fehlende WireGuard-Tools automatisch (`wireguard`, `wireguard-tools`)
 - One-command bootstrap: `pm bootstrap quick` (non-interactive)
 - Network helper: `pm ip` (zeigt lokale IPv4 + direkte Test-URLs)
 
