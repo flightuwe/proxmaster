@@ -5,6 +5,7 @@ INSTALL_DIR="${PROXMASTER_INSTALL_DIR:-/opt/proxmaster}"
 ENV_FILE="${PROXMASTER_ENV_FILE:-$INSTALL_DIR/infra/.env}"
 COMPOSE_FILE="${PROXMASTER_COMPOSE_FILE:-$INSTALL_DIR/infra/docker-compose.yml}"
 INSTALLER_SCRIPT="${PROXMASTER_INSTALLER_SCRIPT:-$INSTALL_DIR/infra/bootstrap/install-node1.sh}"
+API_BASE="${PROXMASTER_API_BASE_URL:-http://127.0.0.1:8080}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -47,6 +48,35 @@ compose() {
   docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
 }
 
+install_wrappers() {
+  local src="$INSTALL_DIR/infra/ops/cli/proxmaster"
+  if [ ! -f "$src" ]; then
+    return
+  fi
+  if [ -w /usr/local/bin ]; then
+    install -m 0755 "$src" /usr/local/bin/pm || true
+    install -m 0755 "$src" /usr/local/bin/proxmaster || true
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo -n install -m 0755 "$src" /usr/local/bin/pm >/dev/null 2>&1 || true
+    sudo -n install -m 0755 "$src" /usr/local/bin/proxmaster >/dev/null 2>&1 || true
+  fi
+}
+
+wait_health() {
+  local max_tries="${1:-30}"
+  local sleep_sec="${2:-2}"
+  local i
+  for i in $(seq 1 "$max_tries"); do
+    if curl -fsS "$API_BASE/healthz" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_sec"
+  done
+  return 1
+}
+
 cmd_update() {
   need_cmd git
   need_cmd docker
@@ -81,6 +111,7 @@ cmd_update() {
   git -C "$INSTALL_DIR" fetch origin main --prune
   git -C "$INSTALL_DIR" checkout main
   git -C "$INSTALL_DIR" reset --hard origin/main
+  install_wrappers
   if [ -f "$INSTALL_DIR/backend/go.mod" ]; then
     local db
     db="$(docker_bin)"
@@ -91,6 +122,11 @@ cmd_update() {
     fi
   fi
   compose up -d --build
+  if ! wait_health 45 2; then
+    echo "[proxmaster] API not healthy after deploy. Last logs:" >&2
+    compose logs --tail=120 proxmaster-api >&2 || true
+    exit 1
+  fi
   echo "[proxmaster] update done"
 }
 
@@ -124,16 +160,21 @@ cmd_proof() {
   need_cmd curl
   need_cmd jq
   ensure_env
+  if ! wait_health 30 2; then
+    echo "[proxmaster] API health endpoint is not ready yet" >&2
+    compose logs --tail=120 proxmaster-api >&2 || true
+    exit 1
+  fi
   local t
   t="$(token)"
   echo "== healthz =="
-  curl -fsS http://127.0.0.1:8080/healthz | jq .
+  curl -fsS "$API_BASE/healthz" | jq .
   echo "== connectivity =="
-  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/connectivity/status | jq .
+  curl -fsS -H "Authorization: Bearer $t" "$API_BASE/connectivity/status" | jq .
   echo "== gitops =="
-  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/gitops/status | jq .
+  curl -fsS -H "Authorization: Bearer $t" "$API_BASE/gitops/status" | jq .
   echo "== breakglass =="
-  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/access/breakglass | jq .
+  curl -fsS -H "Authorization: Bearer $t" "$API_BASE/access/breakglass" | jq .
 }
 
 cmd_status() {
@@ -187,10 +228,10 @@ api_call() {
   local t
   t="$(token)"
   if [ -n "$body" ]; then
-    curl -fsS -X "$method" -H "Authorization: Bearer $t" -H "Content-Type: application/json" "http://127.0.0.1:8080$path" -d "$body"
+    curl -fsS -X "$method" -H "Authorization: Bearer $t" -H "Content-Type: application/json" "$API_BASE$path" -d "$body"
     return
   fi
-  curl -fsS -X "$method" -H "Authorization: Bearer $t" "http://127.0.0.1:8080$path"
+  curl -fsS -X "$method" -H "Authorization: Bearer $t" "$API_BASE$path"
 }
 
 cmd_wg_status() {
