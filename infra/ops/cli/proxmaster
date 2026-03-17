@@ -155,7 +155,7 @@ cmd_update() {
     fi
   fi
   ensure_wireguard_tools
-  compose up -d --build
+  compose up -d --build --force-recreate proxmaster-api runner-agent
   if ! wait_health 45 2; then
     echo "[proxmaster] API not healthy after deploy. Last logs:" >&2
     compose logs --tail=120 proxmaster-api >&2 || true
