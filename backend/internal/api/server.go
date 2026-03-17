@@ -62,6 +62,9 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/access/breakglass", s.withAuth(s.handleBreakglassStatus))
 	r.HandleFunc("/access/breakglass/enable", s.withAuth(s.handleBreakglassEnable))
 	r.HandleFunc("/access/breakglass/disable", s.withAuth(s.handleBreakglassDisable))
+	r.HandleFunc("/vpn/wireguard/status", s.withAuth(s.handleWireGuardStatus))
+	r.HandleFunc("/vpn/wireguard/plan", s.withAuth(s.handleWireGuardPlan))
+	r.HandleFunc("/vpn/wireguard/apply", s.withAuth(s.handleWireGuardApply))
 	r.HandleFunc("/mcp/call", s.withAuth(s.handleMCPCall))
 	r.HandleFunc("/mcp/approve", s.withAuth(s.handleMCPApprove))
 	s.handler = loggingMiddleware(r)
@@ -246,7 +249,7 @@ func (s *Server) handlePolicyExplain(w http.ResponseWriter, _ *http.Request) {
 	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":        "SRE_MODE_FAIL_CLOSED",
-		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate", "ssh.breakglass.enable"},
+		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate", "ssh.breakglass.enable", "vpn.wireguard.apply"},
 		"health_gate": s.gateEval.Explain(snap),
 	})
 }
@@ -418,6 +421,107 @@ func (s *Server) handleBreakglassDisable(w http.ResponseWriter, r *http.Request)
 		Tool:           "ssh.breakglass.disable",
 		Params:         map[string]any{"actor": req.Actor},
 		Actor:          req.Actor,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleWireGuardStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:   "vpn.wireguard.status",
+		Params: map[string]any{},
+		Actor:  "android-admin",
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleWireGuardPlan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor          string `json:"actor"`
+		ServerAddress  string `json:"server_address"`
+		PeerAllowedIPs string `json:"peer_allowed_ips"`
+		ListenPort     int    `json:"listen_port"`
+		ServerEndpoint string `json:"server_endpoint"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool: "vpn.wireguard.plan",
+		Params: map[string]any{
+			"server_address":   req.ServerAddress,
+			"peer_allowed_ips": req.PeerAllowedIPs,
+			"listen_port":      req.ListenPort,
+			"server_endpoint":  req.ServerEndpoint,
+		},
+		Actor:          req.Actor,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleWireGuardApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor           string `json:"actor"`
+		ClientPublicKey string `json:"client_public_key"`
+		ServerAddress   string `json:"server_address"`
+		PeerAllowedIPs  string `json:"peer_allowed_ips"`
+		ListenPort      int    `json:"listen_port"`
+		ServerEndpoint  string `json:"server_endpoint"`
+		ReauthToken     string `json:"reauth_token"`
+		SecondApprover  string `json:"second_approver"`
+		HardwareMFA     bool   `json:"hardware_mfa"`
+		IdempotencyKey  string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool: "vpn.wireguard.apply",
+		Params: map[string]any{
+			"client_public_key": req.ClientPublicKey,
+			"server_address":    req.ServerAddress,
+			"peer_allowed_ips":  req.PeerAllowedIPs,
+			"listen_port":       req.ListenPort,
+			"server_endpoint":   req.ServerEndpoint,
+		},
+		Actor:          req.Actor,
+		ApproveNow:     req.ReauthToken == "reauth-ok",
+		SecondApprover: req.SecondApprover,
+		HardwareMFA:    req.HardwareMFA,
 		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
 	})
 	if err != nil {

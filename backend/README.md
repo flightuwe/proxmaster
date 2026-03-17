@@ -8,6 +8,7 @@ Go control plane implementing:
 - Policy API (`/policy/simulate`, `/policy/explain`)
 - Control-plane endpoint (`/controlplane/endpoint`)
 - Connectivity status (`/connectivity/status`)
+- WireGuard API (`/vpn/wireguard/status`, `/vpn/wireguard/plan`, `/vpn/wireguard/apply`)
 - GitOps status/sync/rollback (`/gitops/status`, `/gitops/sync`, `/gitops/rollback`)
 - Break-glass SSH status/toggle (`/access/breakglass*`)
 - MCP tool execution (`/mcp/call`) + approval path (`/mcp/approve`)
@@ -51,12 +52,17 @@ proxmaster update
 pm st
 pm pf
 pm up
+pm wg-status
+pm wg-plan
 ```
 
 ## Supported MCP tools
 
 - `cluster.get_state`
 - `connectivity.status`
+- `vpn.wireguard.status`
+- `vpn.wireguard.plan`
+- `vpn.wireguard.apply`
 - `proxmox.connection.test`
 - `gitops.status`
 - `gitops.sync.now`

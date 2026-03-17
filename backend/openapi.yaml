@@ -167,6 +167,30 @@ paths:
       responses:
         "200":
           description: Break-glass disable response
+  /vpn/wireguard/status:
+    get:
+      summary: Get WireGuard status via MCP
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: WireGuard status
+  /vpn/wireguard/plan:
+    post:
+      summary: Generate WireGuard setup plan and client config template
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: WireGuard plan
+  /vpn/wireguard/apply:
+    post:
+      summary: Apply WireGuard server config on Proxmaster VM (guarded)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: WireGuard apply response
   /mcp/call:
     post:
       summary: Execute MCP tool call
@@ -207,6 +231,7 @@ paths:
         `connectivity.status`, `proxmox.connection.test`,
         `gitops.status`, `gitops.sync.now`, `gitops.rollback`,
         `ssh.breakglass.status`, `ssh.breakglass.enable`, `ssh.breakglass.disable`,
+        `vpn.wireguard.status`, `vpn.wireguard.plan`, `vpn.wireguard.apply`,
         `storage.inventory.sync`, `storage.pool.plan_apply`, `storage.pool.rebuild_all.plan`,
         `storage.pool.rebuild_all.execute`, `storage.replication.plan_apply`, `storage.health.explain`,
         `backup.policy.upsert`, `backup.policy.explain`, `backup.run.now`,

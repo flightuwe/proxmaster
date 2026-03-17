@@ -30,6 +30,12 @@ Invoke-RestMethod -Method Post -Uri "$base/gitops/sync" -Headers $headers -Conte
     idempotency_key = "demo-gitops-sync-001"
 } | ConvertTo-Json)
 
+Write-Host "1f) WireGuard plan"
+Invoke-RestMethod -Method Post -Uri "$base/vpn/wireguard/plan" -Headers $headers -ContentType "application/json" -Body (@{
+    actor = "demo"
+    server_endpoint = "vpn.example.net:51820"
+} | ConvertTo-Json)
+
 Write-Host "2) Hard-blocked network apply"
 Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
     tool = "network.apply"

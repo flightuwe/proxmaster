@@ -33,6 +33,9 @@ type Config struct {
 	BreakglassEnableCmd   string
 	BreakglassDisableCmd  string
 	BreakglassDefaultMin  int
+	WireGuardConfigPath   string
+	WireGuardKeysDir      string
+	WireGuardListenPort   int
 }
 
 func Load() Config {
@@ -64,6 +67,9 @@ func Load() Config {
 		BreakglassEnableCmd:   envOr("PROXMASTER_BREAKGLASS_ENABLE_CMD", ""),
 		BreakglassDisableCmd:  envOr("PROXMASTER_BREAKGLASS_DISABLE_CMD", ""),
 		BreakglassDefaultMin:  envOrInt("PROXMASTER_BREAKGLASS_DEFAULT_MIN", 60),
+		WireGuardConfigPath:   envOr("PROXMASTER_WIREGUARD_CONFIG_PATH", "/etc/wireguard/wg0.conf"),
+		WireGuardKeysDir:      envOr("PROXMASTER_WIREGUARD_KEYS_DIR", "/etc/proxmaster/wireguard"),
+		WireGuardListenPort:   envOrInt("PROXMASTER_WIREGUARD_LISTEN_PORT", 51820),
 	}
 	return cfg
 }

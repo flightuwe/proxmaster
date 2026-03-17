@@ -28,11 +28,13 @@ Danach führt dich ein Menü:
 
 Neu fuer Remote-Cluster-Betrieb:
 - WireGuard Interface Status in API (`/connectivity/status`)
+- Native WireGuard control (`/vpn/wireguard/status`, `/vpn/wireguard/plan`, `/vpn/wireguard/apply`)
 - GitOps Pull Deploy (`/gitops/status`, `/gitops/sync`, `/gitops/rollback`)
 - SSH Break-Glass Toggle mit Timebox (`/access/breakglass/*`)
 - Ops-Runbooks/Skripte unter `infra/ops/*`
 - CLI Shortcuts: `proxmaster update`, `proxmaster proof`, `proxmaster status`
 - Superkurz: `pm up`, `pm pf`, `pm st`, `pm lg`, `pm rs`, `pm tk`
+- WireGuard CLI: `pm wg-status`, `pm wg-plan`, `pm wg-apply <client_pubkey> <endpoint>`
 
 ## Quick start (backend)
 

@@ -12,6 +12,7 @@ import (
 	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/proxmox"
 	"proxmaster/backend/internal/runner"
+	"proxmaster/backend/internal/vpn"
 )
 
 type Service struct {
@@ -20,15 +21,17 @@ type Service struct {
 	connectivity *connectivity.Service
 	gitops       *gitops.Service
 	breakglass   *breakglass.Service
+	wireguard    *vpn.WireGuardService
 }
 
-func New(px *proxmox.Client, runnerCtrl *runner.Controller, conn *connectivity.Service, gitopsSvc *gitops.Service, breakglassSvc *breakglass.Service) *Service {
+func New(px *proxmox.Client, runnerCtrl *runner.Controller, conn *connectivity.Service, gitopsSvc *gitops.Service, breakglassSvc *breakglass.Service, wgSvc *vpn.WireGuardService) *Service {
 	return &Service{
 		px:           px,
 		runner:       runnerCtrl,
 		connectivity: conn,
 		gitops:       gitopsSvc,
 		breakglass:   breakglassSvc,
+		wireguard:    wgSvc,
 	}
 }
 
@@ -42,6 +45,21 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 			return nil, errors.New("connectivity service not configured")
 		}
 		return s.connectivity.Status(ctx), nil
+	case "vpn.wireguard.status":
+		if s.wireguard == nil {
+			return nil, errors.New("wireguard service not configured")
+		}
+		return s.wireguard.Status(ctx)
+	case "vpn.wireguard.plan":
+		if s.wireguard == nil {
+			return nil, errors.New("wireguard service not configured")
+		}
+		return s.wireguard.Plan(ctx, params)
+	case "vpn.wireguard.apply":
+		if s.wireguard == nil {
+			return nil, errors.New("wireguard service not configured")
+		}
+		return s.wireguard.Apply(ctx, params)
 	case "proxmox.connection.test":
 		return s.px.ConnectionTest(ctx)
 	case "gitops.status":

@@ -79,6 +79,42 @@ cmd_token() {
   token
 }
 
+api_call() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local t
+  t="$(token)"
+  if [ -n "$body" ]; then
+    curl -fsS -X "$method" -H "Authorization: Bearer $t" -H "Content-Type: application/json" "http://127.0.0.1:8080$path" -d "$body"
+    return
+  fi
+  curl -fsS -X "$method" -H "Authorization: Bearer $t" "http://127.0.0.1:8080$path"
+}
+
+cmd_wg_status() {
+  need_cmd jq
+  api_call GET /vpn/wireguard/status | jq .
+}
+
+cmd_wg_plan() {
+  need_cmd jq
+  api_call POST /vpn/wireguard/plan '{}' | jq .
+}
+
+cmd_wg_apply() {
+  need_cmd jq
+  local client_public_key="${1:-}"
+  local endpoint="${2:-}"
+  if [ -z "$client_public_key" ]; then
+    echo "Usage: proxmaster wg-apply <client_public_key> [server_endpoint]" >&2
+    exit 1
+  fi
+  local payload
+  payload="$(jq -nc --arg cpk "$client_public_key" --arg ep "$endpoint" '{actor:"cli-admin",client_public_key:$cpk,server_endpoint:$ep,reauth_token:"reauth-ok",hardware_mfa:true,second_approver:"cli-admin"}')"
+  api_call POST /vpn/wireguard/apply "$payload" | jq .
+}
+
 usage() {
   cat <<EOF
 Usage: proxmaster <command>
@@ -96,6 +132,9 @@ Commands:
   rs [service]         Alias for restart
   token                Print PROXMASTER_ADMIN_TOKEN
   tk                   Alias for token
+  wg-status            WireGuard status
+  wg-plan              WireGuard plan/template output
+  wg-apply             Apply WireGuard config (guarded)
   help                 Show this help
 EOF
 }
@@ -110,6 +149,9 @@ main() {
     lg) cmd="logs" ;;
     rs) cmd="restart" ;;
     tk) cmd="token" ;;
+    wgs) cmd="wg-status" ;;
+    wgp) cmd="wg-plan" ;;
+    wga) cmd="wg-apply" ;;
   esac
   case "$cmd" in
     update) cmd_update "$@" ;;
@@ -118,6 +160,9 @@ main() {
     logs) cmd_logs "$@" ;;
     restart) cmd_restart "$@" ;;
     token) cmd_token "$@" ;;
+    wg-status) cmd_wg_status "$@" ;;
+    wg-plan) cmd_wg_plan "$@" ;;
+    wg-apply) cmd_wg_apply "$@" ;;
     help|-h|--help) usage ;;
     *)
       echo "[proxmaster] unknown command: $cmd" >&2

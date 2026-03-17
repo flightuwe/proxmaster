@@ -22,7 +22,7 @@ func TestHandleCallHardBlock(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil, nil),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
@@ -48,7 +48,7 @@ func TestHandleCallApproved(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil, nil),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
@@ -74,7 +74,7 @@ func TestHandleCallIdempotencyKey(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil, nil),
 	)
 
 	req := models.MCPCallRequest{

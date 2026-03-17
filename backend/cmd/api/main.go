@@ -21,6 +21,7 @@ import (
 	"proxmaster/backend/internal/risk"
 	"proxmaster/backend/internal/runner"
 	"proxmaster/backend/internal/store"
+	"proxmaster/backend/internal/vpn"
 )
 
 func main() {
@@ -58,8 +59,14 @@ func main() {
 		RollbackOnFail: cfg.GitOpsRollbackOnFail,
 	})
 	breakglassSvc := breakglass.NewService(cfg.BreakglassEnableCmd, cfg.BreakglassDisableCmd, cfg.BreakglassDefaultMin)
+	wgSvc := vpn.NewWireGuardService(vpn.WireGuardConfig{
+		Interface:   cfg.WireGuardInterface,
+		ConfigPath:  cfg.WireGuardConfigPath,
+		KeysDir:     cfg.WireGuardKeysDir,
+		DefaultPort: cfg.WireGuardListenPort,
+	})
 	runnerCtrl := runner.NewController()
-	orch := orchestrator.New(px, runnerCtrl, connSvc, gitopsSvc, breakglassSvc)
+	orch := orchestrator.New(px, runnerCtrl, connSvc, gitopsSvc, breakglassSvc, wgSvc)
 	riskEngine := risk.NewEngine()
 	policyGate := policy.NewGate()
 	gateEval := health.NewGateEvaluator(cfg.FailClosed, cfg.RunnerHeartbeatMaxSec)

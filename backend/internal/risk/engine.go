@@ -16,11 +16,11 @@ func NewEngine() *Engine {
 func (e *Engine) Classify(tool string, params map[string]any) models.RiskLevel {
 	tool = strings.ToLower(tool)
 	switch tool {
-	case "cluster.get_state", "proxmox.connection.test", "connectivity.status", "gitops.status", "ssh.breakglass.status":
+	case "cluster.get_state", "proxmox.connection.test", "connectivity.status", "gitops.status", "ssh.breakglass.status", "vpn.wireguard.status":
 		return models.RiskLow
-	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create", "storage.inventory.sync", "storage.health.explain", "backup.policy.explain", "backup.policy.list", "backup.target.list", "gitops.sync.now", "gitops.rollback", "ssh.breakglass.disable":
+	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create", "storage.inventory.sync", "storage.health.explain", "backup.policy.explain", "backup.policy.list", "backup.target.list", "gitops.sync.now", "gitops.rollback", "ssh.breakglass.disable", "vpn.wireguard.plan":
 		return models.RiskMedium
-	case "storage.pool.apply", "storage.plan_apply", "storage.pool.rebuild_all.plan", "storage.pool.rebuild_all.execute", "storage.replication.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec", "proxmaster.self_migrate", "backup.policy.upsert", "backup.run.now", "backup.restore.plan", "backup.restore.execute", "backup.verify.sample", "ssh.breakglass.enable":
+	case "storage.pool.apply", "storage.plan_apply", "storage.pool.rebuild_all.plan", "storage.pool.rebuild_all.execute", "storage.replication.plan_apply", "network.apply", "network.plan_apply", "updates.rollout_start", "updates.canary_start", "updates.rollout_continue", "updates.rollout_abort", "node.runner.exec", "proxmaster.self_migrate", "backup.policy.upsert", "backup.run.now", "backup.restore.plan", "backup.restore.execute", "backup.verify.sample", "ssh.breakglass.enable", "vpn.wireguard.apply":
 		return models.RiskHigh
 	}
 
@@ -85,6 +85,9 @@ func (e *Engine) HardBlockReason(tool string, params map[string]any, risk models
 	}
 	if lowerTool == "ssh.breakglass.enable" {
 		return true, "break-glass ssh enable requires explicit dual approval"
+	}
+	if lowerTool == "vpn.wireguard.apply" {
+		return true, "wireguard apply touches host network and requires explicit approval"
 	}
 
 	if lowerTool == "node.runner.exec" {

@@ -102,6 +102,9 @@ write_env_file() {
   local breakglass_enable_cmd="${22}"
   local breakglass_disable_cmd="${23}"
   local breakglass_default_min="${24}"
+  local wg_config_path="${25}"
+  local wg_keys_dir="${26}"
+  local wg_listen_port="${27}"
 
   cat >"$INFRA_ENV_FILE" <<EOF
 PROXMASTER_LISTEN_ADDR=:8080
@@ -130,6 +133,9 @@ PROXMASTER_GITOPS_ROLLBACK_ON_FAIL=$gitops_rollback_on_fail
 PROXMASTER_BREAKGLASS_ENABLE_CMD=$breakglass_enable_cmd
 PROXMASTER_BREAKGLASS_DISABLE_CMD=$breakglass_disable_cmd
 PROXMASTER_BREAKGLASS_DEFAULT_MIN=$breakglass_default_min
+PROXMASTER_WIREGUARD_CONFIG_PATH=$wg_config_path
+PROXMASTER_WIREGUARD_KEYS_DIR=$wg_keys_dir
+PROXMASTER_WIREGUARD_LISTEN_PORT=$wg_listen_port
 RUNNER_LISTEN_ADDR=:9091
 RUNNER_NODE_ID=$runner_node_id
 RUNNER_SHARED_SECRET=$runner_secret
@@ -167,7 +173,7 @@ EOF
 }
 
 quick_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min wg_config_path wg_keys_dir wg_listen_port
   admin_token="$(rand_token)"
   store_backend="postgres"
   pg_dsn="postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
@@ -192,14 +198,17 @@ quick_install() {
   breakglass_enable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh 22 10.13.13.0/24"
   breakglass_disable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24"
   breakglass_default_min="60"
+  wg_config_path="/etc/wireguard/wg0.conf"
+  wg_keys_dir="/etc/proxmaster/wireguard"
+  wg_listen_port="51820"
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min"
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min" "$wg_config_path" "$wg_keys_dir" "$wg_listen_port"
   start_stack
   print_summary "$admin_token"
 }
 
 custom_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min wg_config_path wg_keys_dir wg_listen_port
   read -r -p "Admin Token (leer = automatisch generieren): " admin_token
   if [ -z "$admin_token" ]; then admin_token="$(rand_token)"; fi
 
@@ -266,8 +275,14 @@ custom_install() {
   if [ -z "$breakglass_disable_cmd" ]; then breakglass_disable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24"; fi
   read -r -p "Break-Glass Default Minuten (default: 60): " breakglass_default_min
   if [ -z "$breakglass_default_min" ]; then breakglass_default_min="60"; fi
+  read -r -p "WireGuard Config Path (default: /etc/wireguard/wg0.conf): " wg_config_path
+  if [ -z "$wg_config_path" ]; then wg_config_path="/etc/wireguard/wg0.conf"; fi
+  read -r -p "WireGuard Keys Dir (default: /etc/proxmaster/wireguard): " wg_keys_dir
+  if [ -z "$wg_keys_dir" ]; then wg_keys_dir="/etc/proxmaster/wireguard"; fi
+  read -r -p "WireGuard Listen Port (default: 51820): " wg_listen_port
+  if [ -z "$wg_listen_port" ]; then wg_listen_port="51820"; fi
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min"
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min" "$wg_config_path" "$wg_keys_dir" "$wg_listen_port"
   start_stack
   print_summary "$admin_token"
 }
