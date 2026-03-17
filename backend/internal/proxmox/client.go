@@ -4,23 +4,92 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"proxmaster/backend/internal/controlplane"
 	"proxmaster/backend/internal/models"
+	"proxmaster/backend/internal/proxmoxapi"
 	"proxmaster/backend/internal/store"
 )
 
 type Client struct {
-	store       store.Store
+	store        store.Store
 	controlPlane *controlplane.Manager
+	realAPI      *proxmoxapi.Client
 }
 
-func NewClient(s store.Store, cp *controlplane.Manager) *Client {
-	return &Client{store: s, controlPlane: cp}
+func NewClient(s store.Store, cp *controlplane.Manager, realAPI *proxmoxapi.Client) *Client {
+	return &Client{store: s, controlPlane: cp, realAPI: realAPI}
 }
 
-func (c *Client) GetState(_ context.Context) models.ClusterState {
+func (c *Client) GetState(ctx context.Context) models.ClusterState {
+	if c.realAPI != nil && c.realAPI.Enabled() {
+		state := c.store.ClusterState()
+		res, err := c.realAPI.ClusterResources(ctx, "")
+		if err == nil {
+			nodes := make([]models.Node, 0)
+			vms := make([]models.VM, 0)
+			for _, r := range res {
+				switch r.Type {
+				case "node":
+					nodes = append(nodes, models.Node{
+						ID:            r.Node,
+						Name:          r.Node,
+						Status:        r.Status,
+						Maintenance:   false,
+						LastHeartbeat: time.Now().UTC(),
+						RunnerHealthy: true,
+					})
+				case "qemu", "lxc":
+					vmID := strconv.Itoa(r.VMID)
+					name := r.Name
+					if name == "" {
+						name = vmID
+					}
+					vms = append(vms, models.VM{
+						ID:       vmID,
+						NodeID:   r.Node,
+						Name:     name,
+						Power:    r.Status,
+						Priority: 80,
+						CPU:      int(r.CPUs),
+						MemoryMB: int(r.MaxMem / (1024 * 1024)),
+						DiskGB:   int(r.MaxDisk / (1024 * 1024 * 1024)),
+						Kind:     r.Type,
+					})
+				}
+			}
+			if len(nodes) > 0 {
+				state.Nodes = nodes
+			}
+			if len(vms) > 0 {
+				state.VMs = vms
+			}
+			storages, serr := c.realAPI.StorageList(ctx)
+			if serr == nil && len(storages) > 0 {
+				pools := make([]models.StoragePool, 0, len(storages))
+				for _, s := range storages {
+					status := "unknown"
+					if s.Enabled == 1 {
+						status = "healthy"
+					}
+					pools = append(pools, models.StoragePool{
+						Name:       s.Storage,
+						Type:       s.Type,
+						Backend:    s.Type,
+						Status:     status,
+						CapacityGB: int(s.Total / (1024 * 1024 * 1024)),
+						UsedGB:     int(s.Used / (1024 * 1024 * 1024)),
+						Tier:       "balanced",
+					})
+				}
+				state.Pools = pools
+			}
+			state.UpdatedAt = time.Now().UTC()
+			return state
+		}
+	}
 	return c.store.ClusterState()
 }
 
@@ -32,15 +101,34 @@ func (c *Client) SetNodeMaintenance(_ context.Context, nodeID string, maintenanc
 	return map[string]any{"changed": true, "node_id": nodeID, "maintenance": maintenance}, nil
 }
 
-func (c *Client) MigrateVM(_ context.Context, vmID, targetNode string) (map[string]any, error) {
+func (c *Client) MigrateVM(ctx context.Context, vmID, targetNode string) (map[string]any, error) {
+	if c.realAPI != nil && c.realAPI.Enabled() {
+		sourceNode := ""
+		for _, vm := range c.GetState(ctx).VMs {
+			if vm.ID == vmID {
+				sourceNode = vm.NodeID
+				break
+			}
+		}
+		parsedID, ok := proxmoxapi.ParseVMID(vmID)
+		if !ok {
+			return nil, errors.New("invalid vm_id")
+		}
+		if sourceNode == "" {
+			return nil, errors.New("source node for vm not found")
+		}
+		if err := c.realAPI.MigrateQemuVM(ctx, sourceNode, parsedID, targetNode, true); err != nil {
+			return nil, err
+		}
+	}
 	ok := c.store.MigrateVM(vmID, targetNode)
 	if !ok {
-		return nil, errors.New("vm not found")
+		return map[string]any{"changed": true, "vm_id": vmID, "target_node": targetNode, "live_api_only": true}, nil
 	}
 	return map[string]any{"changed": true, "vm_id": vmID, "target_node": targetNode}, nil
 }
 
-func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode string, restartAfter bool) (map[string]any, error) {
+func (c *Client) SelfMigrateProxmaster(ctx context.Context, vmID, targetNode string, restartAfter bool) (map[string]any, error) {
 	if vmID == "" {
 		vmID = "100"
 	}
@@ -74,9 +162,9 @@ func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode strin
 		return nil, errors.New("target node is not online")
 	}
 
-	ok := c.store.MigrateVM(vmID, targetNode)
-	if !ok {
-		return nil, errors.New("vm migration failed")
+	_, err := c.MigrateVM(ctx, vmID, targetNode)
+	if err != nil {
+		return nil, err
 	}
 	switchResult := c.controlPlane.SwitchTo(targetNode)
 
@@ -92,6 +180,28 @@ func (c *Client) SelfMigrateProxmaster(_ context.Context, vmID, targetNode strin
 		"client_reconnect_hint":  "reconnect API client to active control-plane endpoint",
 		"handover":               switchResult,
 		"completed_at_utc":       time.Now().UTC().Format(time.RFC3339),
+	}, nil
+}
+
+func (c *Client) ConnectionTest(ctx context.Context) (map[string]any, error) {
+	if c.realAPI == nil || !c.realAPI.Enabled() {
+		return map[string]any{
+			"connected": false,
+			"mode":      "mock",
+			"message":   "real proxmox api disabled (set PROXMASTER_PROXMOX_USE_REAL_API=true)",
+		}, nil
+	}
+	if err := c.realAPI.Ping(ctx); err != nil {
+		return map[string]any{
+			"connected": false,
+			"mode":      "real",
+			"error":     err.Error(),
+		}, nil
+	}
+	return map[string]any{
+		"connected": true,
+		"mode":      "real",
+		"message":   "proxmox api reachable and token accepted",
 	}, nil
 }
 

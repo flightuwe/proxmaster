@@ -148,6 +148,7 @@ paths:
           description: Tool execution result
       description: |
         Includes storage/backup tools:
+        `proxmox.connection.test`,
         `storage.inventory.sync`, `storage.pool.plan_apply`, `storage.pool.rebuild_all.plan`,
         `storage.pool.rebuild_all.execute`, `storage.replication.plan_apply`, `storage.health.explain`,
         `backup.policy.upsert`, `backup.policy.explain`, `backup.run.now`,

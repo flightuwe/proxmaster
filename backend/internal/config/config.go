@@ -18,6 +18,11 @@ type Config struct {
 	ControlPlaneDNSName   string
 	ControlPlaneAPIPort   int
 	ControlPlaneNodeID    string
+	ProxmoxUseRealAPI     bool
+	ProxmoxAPIBaseURL     string
+	ProxmoxAPITokenID     string
+	ProxmoxAPITokenSecret string
+	ProxmoxInsecureTLS    bool
 }
 
 func Load() Config {
@@ -34,6 +39,11 @@ func Load() Config {
 		ControlPlaneDNSName:   envOr("PROXMASTER_CONTROLPLANE_DNS_NAME", "proxmaster.internal"),
 		ControlPlaneAPIPort:   envOrInt("PROXMASTER_CONTROLPLANE_API_PORT", 8080),
 		ControlPlaneNodeID:    envOr("PROXMASTER_NODE_ID", "node-1"),
+		ProxmoxUseRealAPI:     envOr("PROXMASTER_PROXMOX_USE_REAL_API", "false") == "true",
+		ProxmoxAPIBaseURL:     envOr("PROXMASTER_PROXMOX_API_BASE_URL", "https://proxmox-node1:8006/api2/json"),
+		ProxmoxAPITokenID:     envOr("PROXMASTER_PROXMOX_API_TOKEN_ID", ""),
+		ProxmoxAPITokenSecret: envOr("PROXMASTER_PROXMOX_API_TOKEN_SECRET", ""),
+		ProxmoxInsecureTLS:    envOr("PROXMASTER_PROXMOX_INSECURE_TLS", "false") == "true",
 	}
 	return cfg
 }

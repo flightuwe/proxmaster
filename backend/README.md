@@ -21,12 +21,18 @@ $env:PROXMASTER_CONTROLPLANE_VIP="100.100.100.10"
 $env:PROXMASTER_CONTROLPLANE_DNS_NAME="proxmaster.internal"
 $env:PROXMASTER_CONTROLPLANE_API_PORT="8080"
 $env:PROXMASTER_NODE_ID="node-1"
+$env:PROXMASTER_PROXMOX_USE_REAL_API="true"
+$env:PROXMASTER_PROXMOX_API_BASE_URL="https://proxmox-node1:8006/api2/json"
+$env:PROXMASTER_PROXMOX_API_TOKEN_ID="root@pam!proxmaster"
+$env:PROXMASTER_PROXMOX_API_TOKEN_SECRET="<secret>"
+$env:PROXMASTER_PROXMOX_INSECURE_TLS="false"
 go run ./cmd/api
 ```
 
 ## Supported MCP tools
 
 - `cluster.get_state`
+- `proxmox.connection.test`
 - `node.set_maintenance`
 - `vm.migrate`
 - `proxmaster.self_migrate`
@@ -99,6 +105,13 @@ Authorization: Bearer <token>
 - Rebuild-all workflow via MCP tools (`plan -> execute`) with guarded approval
 - Per-workload backup policy model (`priority + override + decision log`)
 - Restore planning/execution and sample restore verification
+
+## Real Proxmox API notes
+
+- Create API token in Proxmox (recommended least-privilege role for automation).
+- Provide token via env vars above.
+- Validate connection:
+  - `POST /mcp/call` with tool `proxmox.connection.test`
 
 ## Tests
 

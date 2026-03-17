@@ -24,6 +24,8 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 	case "cluster.get_state":
 		state := s.px.GetState(ctx)
 		return map[string]any{"state": state}, nil
+	case "proxmox.connection.test":
+		return s.px.ConnectionTest(ctx)
 	case "node.set_maintenance":
 		nodeID, _ := params["node_id"].(string)
 		maintenance, _ := params["maintenance"].(bool)

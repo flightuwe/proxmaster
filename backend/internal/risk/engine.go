@@ -16,7 +16,7 @@ func NewEngine() *Engine {
 func (e *Engine) Classify(tool string, params map[string]any) models.RiskLevel {
 	tool = strings.ToLower(tool)
 	switch tool {
-	case "cluster.get_state":
+	case "cluster.get_state", "proxmox.connection.test":
 		return models.RiskLow
 	case "node.set_maintenance", "vm.migrate", "updates.rollout_pause", "updates.plan", "policy.simulate", "policy.explain", "vm.create", "vm.clone_from_template", "lxc.create", "storage.inventory.sync", "storage.health.explain", "backup.policy.explain", "backup.policy.list", "backup.target.list":
 		return models.RiskMedium

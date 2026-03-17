@@ -13,6 +13,7 @@
    - `/healthz`
    - `/cluster/overview`
    - `/controlplane/endpoint`
+   - `mcp tool: proxmox.connection.test`
    - hard-block path via `/mcp/call` + `/mcp/approve`
    - `/policy/simulate`
    - `/nodes/heartbeat`

@@ -14,6 +14,7 @@ import (
 	"proxmaster/backend/internal/orchestrator"
 	"proxmaster/backend/internal/policy"
 	"proxmaster/backend/internal/proxmox"
+	"proxmaster/backend/internal/proxmoxapi"
 	"proxmaster/backend/internal/risk"
 	"proxmaster/backend/internal/runner"
 	"proxmaster/backend/internal/store"
@@ -29,7 +30,21 @@ func main() {
 		APIPort:     cfg.ControlPlaneAPIPort,
 		InitialNode: cfg.ControlPlaneNodeID,
 	})
-	px := proxmox.NewClient(st, cp)
+	realAPI := proxmoxapi.New(proxmoxapi.Config{
+		BaseURL:     cfg.ProxmoxAPIBaseURL,
+		TokenID:     cfg.ProxmoxAPITokenID,
+		TokenSecret: cfg.ProxmoxAPITokenSecret,
+		InsecureTLS: cfg.ProxmoxInsecureTLS,
+		Enabled:     cfg.ProxmoxUseRealAPI,
+	})
+	if realAPI.Enabled() {
+		if err := realAPI.Ping(context.Background()); err != nil {
+			log.Printf("warn: proxmox real API enabled but ping failed: %v", err)
+		} else {
+			log.Printf("proxmox real API connected: %s", cfg.ProxmoxAPIBaseURL)
+		}
+	}
+	px := proxmox.NewClient(st, cp, realAPI)
 	runnerCtrl := runner.NewController()
 	orch := orchestrator.New(px, runnerCtrl)
 	riskEngine := risk.NewEngine()

@@ -16,7 +16,7 @@ func TestSelfMigrateProxmasterSwitchesEndpoint(t *testing.T) {
 		APIPort:     8080,
 		InitialNode: "node-1",
 	})
-	c := NewClient(st, cp)
+	c := NewClient(st, cp, nil)
 
 	out, err := c.SelfMigrateProxmaster(context.Background(), "100", "node-2", true)
 	if err != nil {

@@ -76,6 +76,11 @@ write_env_file() {
   local cp_vip="$7"
   local cp_dns="$8"
   local cp_port="$9"
+  local pve_real_api="${10}"
+  local pve_api_base="${11}"
+  local pve_token_id="${12}"
+  local pve_token_secret="${13}"
+  local pve_insecure_tls="${14}"
 
   cat >"$INFRA_ENV_FILE" <<EOF
 PROXMASTER_LISTEN_ADDR=:8080
@@ -89,6 +94,11 @@ PROXMASTER_CONTROLPLANE_VIP=$cp_vip
 PROXMASTER_CONTROLPLANE_DNS_NAME=$cp_dns
 PROXMASTER_CONTROLPLANE_API_PORT=$cp_port
 PROXMASTER_NODE_ID=$runner_node_id
+PROXMASTER_PROXMOX_USE_REAL_API=$pve_real_api
+PROXMASTER_PROXMOX_API_BASE_URL=$pve_api_base
+PROXMASTER_PROXMOX_API_TOKEN_ID=$pve_token_id
+PROXMASTER_PROXMOX_API_TOKEN_SECRET=$pve_token_secret
+PROXMASTER_PROXMOX_INSECURE_TLS=$pve_insecure_tls
 RUNNER_LISTEN_ADDR=:9091
 RUNNER_NODE_ID=$runner_node_id
 RUNNER_SHARED_SECRET=$runner_secret
@@ -121,7 +131,7 @@ EOF
 }
 
 quick_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls
   admin_token="$(rand_token)"
   store_backend="postgres"
   pg_dsn="postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
@@ -131,14 +141,19 @@ quick_install() {
   cp_vip="100.100.100.10"
   cp_dns="proxmaster.internal"
   cp_port="8080"
+  pve_real_api="false"
+  pve_api_base="https://proxmox-node1:8006/api2/json"
+  pve_token_id=""
+  pve_token_secret=""
+  pve_insecure_tls="false"
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port"
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls"
   start_stack
   print_summary "$admin_token"
 }
 
 custom_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls
   read -r -p "Admin Token (leer = automatisch generieren): " admin_token
   if [ -z "$admin_token" ]; then admin_token="$(rand_token)"; fi
 
@@ -166,7 +181,19 @@ custom_install() {
   read -r -p "ControlPlane API Port (default: 8080): " cp_port
   if [ -z "$cp_port" ]; then cp_port="8080"; fi
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port"
+  read -r -p "Proxmox Real API aktivieren? [true/false] (default: true): " pve_real_api
+  if [ -z "$pve_real_api" ]; then pve_real_api="true"; fi
+
+  read -r -p "Proxmox API Base URL (default: https://<node>:8006/api2/json): " pve_api_base
+  if [ -z "$pve_api_base" ]; then pve_api_base="https://proxmox-node1:8006/api2/json"; fi
+
+  read -r -p "Proxmox API Token ID (z. B. root@pam!proxmaster): " pve_token_id
+  read -r -p "Proxmox API Token Secret: " pve_token_secret
+
+  read -r -p "Proxmox Insecure TLS [true/false] (default: false): " pve_insecure_tls
+  if [ -z "$pve_insecure_tls" ]; then pve_insecure_tls="false"; fi
+
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls"
   start_stack
   print_summary "$admin_token"
 }

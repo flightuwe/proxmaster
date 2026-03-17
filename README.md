@@ -23,6 +23,9 @@ Danach führt dich ein Menü:
 - `vip` (feste Virtual IP)
 - `dns` (stabiler DNS-Name mit niedriger TTL)
 
+`Custom Install` kann jetzt auch direkt die echte Proxmox API anbinden
+(`PROXMASTER_PROXMOX_*` Variablen).
+
 ## Quick start (backend)
 
 ```powershell

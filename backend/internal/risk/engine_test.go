@@ -11,6 +11,9 @@ func TestClassify(t *testing.T) {
 	if got := e.Classify("cluster.get_state", nil); got != models.RiskLow {
 		t.Fatalf("expected LOW, got %s", got)
 	}
+	if got := e.Classify("proxmox.connection.test", nil); got != models.RiskLow {
+		t.Fatalf("expected LOW for proxmox.connection.test, got %s", got)
+	}
 	if got := e.Classify("vm.migrate", nil); got != models.RiskMedium {
 		t.Fatalf("expected MEDIUM, got %s", got)
 	}

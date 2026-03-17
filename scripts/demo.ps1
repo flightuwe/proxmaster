@@ -11,6 +11,13 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentT
     actor = "demo"
 } | ConvertTo-Json)
 
+Write-Host "1b) Proxmox API connection test"
+Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
+    tool = "proxmox.connection.test"
+    params = @{}
+    actor = "demo"
+} | ConvertTo-Json)
+
 Write-Host "2) Hard-blocked network apply"
 Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
     tool = "network.apply"
