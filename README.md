@@ -32,6 +32,7 @@ Neu fuer Remote-Cluster-Betrieb:
 - SSH Break-Glass Toggle mit Timebox (`/access/breakglass/*`)
 - Ops-Runbooks/Skripte unter `infra/ops/*`
 - CLI Shortcuts: `proxmaster update`, `proxmaster proof`, `proxmaster status`
+- Superkurz: `pm up`, `pm pf`, `pm st`, `pm lg`, `pm rs`, `pm tk`
 
 ## Quick start (backend)
 

@@ -85,11 +85,17 @@ Usage: proxmaster <command>
 
 Commands:
   update               Pull latest code and redeploy stack
+  up                   Alias for update
   proof                Run quick health/connectivity proof checks
+  pf                   Alias for proof
   status               Show docker compose status
+  st                   Alias for status
   logs [service]       Show logs (default: proxmaster-api)
+  lg [service]         Alias for logs
   restart [service]    Restart service (default: proxmaster-api)
+  rs [service]         Alias for restart
   token                Print PROXMASTER_ADMIN_TOKEN
+  tk                   Alias for token
   help                 Show this help
 EOF
 }
@@ -97,6 +103,14 @@ EOF
 main() {
   local cmd="${1:-help}"
   shift || true
+  case "$cmd" in
+    up) cmd="update" ;;
+    pf) cmd="proof" ;;
+    st) cmd="status" ;;
+    lg) cmd="logs" ;;
+    rs) cmd="restart" ;;
+    tk) cmd="token" ;;
+  esac
   case "$cmd" in
     update) cmd_update "$@" ;;
     proof) cmd_proof "$@" ;;

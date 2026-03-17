@@ -48,6 +48,9 @@ Node VM shortcut commands (after installer):
 proxmaster status
 proxmaster proof
 proxmaster update
+pm st
+pm pf
+pm up
 ```
 
 ## Supported MCP tools
