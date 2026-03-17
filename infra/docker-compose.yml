@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   proxmaster-api:
     image: golang:1.22

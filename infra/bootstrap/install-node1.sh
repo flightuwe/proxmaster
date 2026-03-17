@@ -318,10 +318,46 @@ menu() {
 }
 
 main() {
+  local mode=""
+  local non_interactive="false"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --quick) mode="quick" ;;
+      --custom) mode="custom" ;;
+      --update) mode="update" ;;
+      --non-interactive) non_interactive="true" ;;
+      *)
+        err "Unbekannte Option: $1"
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
   require_root
   detect_apt
   install_dependencies
   sync_repo
+  if [ "$mode" = "quick" ]; then
+    quick_install
+    return
+  fi
+  if [ "$mode" = "update" ]; then
+    update_only
+    return
+  fi
+  if [ "$mode" = "custom" ] && [ "$non_interactive" = "true" ]; then
+    err "--custom kann nicht non-interactive ausgefuehrt werden."
+    exit 1
+  fi
+  if [ "$mode" = "custom" ]; then
+    custom_install
+    return
+  fi
+  if [ "$non_interactive" = "true" ]; then
+    quick_install
+    return
+  fi
   menu
 }
 

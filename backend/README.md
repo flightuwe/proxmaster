@@ -54,6 +54,7 @@ pm pf
 pm up
 pm wg-status
 pm wg-plan
+pm bootstrap quick
 ```
 
 ## Supported MCP tools
