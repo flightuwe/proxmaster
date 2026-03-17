@@ -1,6 +1,9 @@
 services:
   proxmaster-api:
-    image: golang:1.22
+    build:
+      context: ..
+      dockerfile: infra/docker/proxmaster-go.Dockerfile
+    image: proxmaster-go:local
     container_name: proxmaster-api
     working_dir: /app/backend
     command: ["go", "run", "./cmd/api"]
@@ -73,7 +76,10 @@ services:
       - "8200:8200"
 
   runner-agent:
-    image: golang:1.22
+    build:
+      context: ..
+      dockerfile: infra/docker/proxmaster-go.Dockerfile
+    image: proxmaster-go:local
     container_name: proxmaster-runner-agent
     working_dir: /app/backend
     command: ["go", "run", "./cmd/runner-agent"]
