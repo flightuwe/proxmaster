@@ -31,7 +31,7 @@ detect_apt() {
 install_dependencies() {
   log "Installiere Abhaengigkeiten (git, curl, jq, docker, compose-plugin) ..."
   apt-get update -y
-  apt-get install -y ca-certificates curl gnupg lsb-release git jq
+  apt-get install -y ca-certificates curl gnupg lsb-release git jq wireguard wireguard-tools
 
   if ! command -v docker >/dev/null 2>&1; then
     install -m 0755 -d /etc/apt/keyrings

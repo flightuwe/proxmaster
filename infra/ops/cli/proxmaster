@@ -7,6 +7,7 @@ COMPOSE_FILE="${PROXMASTER_COMPOSE_FILE:-$INSTALL_DIR/infra/docker-compose.yml}"
 INSTALLER_SCRIPT="${PROXMASTER_INSTALLER_SCRIPT:-$INSTALL_DIR/infra/bootstrap/install-node1.sh}"
 API_BASE="${PROXMASTER_API_BASE_URL:-http://127.0.0.1:8080}"
 AUTO_INSTALL_WG_TOOLS="${PROXMASTER_AUTO_INSTALL_WIREGUARD_TOOLS:-true}"
+WG_INSTALL_RETRIES="${PROXMASTER_WIREGUARD_INSTALL_RETRIES:-3}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -94,16 +95,48 @@ ensure_wireguard_tools() {
     return
   fi
   echo "[proxmaster] wireguard tools missing; installing ..."
+  local i
+  local installer="apt-get"
+  if command -v sudo >/dev/null 2>&1 && [ "${EUID:-$(id -u)}" -ne 0 ]; then
+    installer="sudo apt-get"
+  elif [ "${EUID:-$(id -u)}" -ne 0 ]; then
+    echo "[proxmaster] cannot install wireguard tools without sudo/root" >&2
+    exit 1
+  fi
+
+  for i in $(seq 1 "$WG_INSTALL_RETRIES"); do
+    # Wait briefly for dpkg/apt locks from unattended jobs.
+    local wait_try=0
+    while [ -f /var/lib/dpkg/lock-frontend ] || [ -f /var/lib/apt/lists/lock ]; do
+      wait_try=$((wait_try + 1))
+      if [ "$wait_try" -gt 30 ]; then
+        break
+      fi
+      sleep 2
+    done
+
+    if [ "$installer" = "sudo apt-get" ]; then
+      sudo DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard wireguard-tools || \
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools || true
+    else
+      DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+      DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard wireguard-tools || \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard-tools || true
+    fi
+
+    if command -v wg >/dev/null 2>&1; then
+      echo "[proxmaster] wireguard tools installed"
+      return
+    fi
+    sleep 2
+  done
+
   if command -v sudo >/dev/null 2>&1; then
-    sudo apt-get update -y >/dev/null 2>&1 || true
-    sudo apt-get install -y wireguard wireguard-tools >/dev/null 2>&1 || true
-  elif [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    apt-get update -y >/dev/null 2>&1 || true
-    apt-get install -y wireguard wireguard-tools >/dev/null 2>&1 || true
+    sudo apt-cache policy wireguard wireguard-tools || true
   fi
-  if ! command -v wg >/dev/null 2>&1; then
-    echo "[proxmaster] warning: wireguard tools still unavailable (install manually if needed)" >&2
-  fi
+  echo "[proxmaster] failed to install wireguard tools automatically; cannot continue" >&2
+  exit 1
 }
 
 wait_health() {
