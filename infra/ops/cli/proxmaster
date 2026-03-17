@@ -522,6 +522,88 @@ cmd_wireguard_vm_deploy() {
   cmd_mcp "service.wireguard.vm.deploy" "$params"
 }
 
+cmd_agent() {
+  local minutes="${1:-60}"
+  if ! [[ "$minutes" =~ ^[0-9]+$ ]]; then
+    echo "[proxmaster] minutes must be numeric" >&2
+    exit 1
+  fi
+  if [ "$minutes" -lt 5 ]; then
+    minutes=5
+  fi
+  if [ "$minutes" -gt 240 ]; then
+    minutes=240
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "[proxmaster] sudo required for agent setup" >&2
+    exit 1
+  fi
+
+  local user="proxmaster-agent"
+  local token
+  token="$(tr -dc A-Za-z0-9 </dev/urandom | head -c 36)"
+  local now_utc
+  now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local until_utc
+  until_utc="$(date -u -d "+${minutes} minutes" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  sudo bash -lc "
+set -euo pipefail
+USER_NAME='$user'
+TOKEN='$token'
+MINS='$minutes'
+WG_NET='\${PROXMASTER_AGENT_WG_NET:-10.13.13.0/24}'
+
+if ! id \"\$USER_NAME\" >/dev/null 2>&1; then
+  useradd -m -s /bin/bash \"\$USER_NAME\"
+fi
+
+echo \"\$USER_NAME:\$TOKEN\" | chpasswd
+usermod -U \"\$USER_NAME\" || true
+
+mkdir -p /etc/ssh/sshd_config.d
+cat >/etc/ssh/sshd_config.d/99-proxmaster-agent.conf <<EOF
+Match User \$USER_NAME
+  PasswordAuthentication yes
+  KbdInteractiveAuthentication yes
+  PubkeyAuthentication yes
+  PermitTTY yes
+  X11Forwarding no
+  AllowTcpForwarding no
+  PermitTunnel no
+  ForceCommand /bin/bash -l
+  AllowUsers \$USER_NAME
+  Match Address \$WG_NET
+EOF
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart ssh || systemctl restart sshd || true
+fi
+
+if command -v systemd-run >/dev/null 2>&1; then
+  UNIT=\"proxmaster-agent-expire-\$(date +%s)\"
+  systemd-run --unit \"\$UNIT\" --on-active=\"\${MINS}m\" /bin/bash -lc \"passwd -l \$USER_NAME >/dev/null 2>&1 || true; usermod -L \$USER_NAME >/dev/null 2>&1 || true; pkill -KILL -u \$USER_NAME >/dev/null 2>&1 || true\" >/dev/null 2>&1 || true
+fi
+"
+
+  local host_ip
+  host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [ -z "$host_ip" ]; then
+    host_ip="YOUR_VM_IP"
+  fi
+
+  cat <<EOF
+[proxmaster-agent]
+enabled_at_utc=$now_utc
+expires_at_utc=$until_utc
+username=$user
+token=$token
+ssh_hint=ssh $user@$host_ip
+note=token is temporary password; access intended over WireGuard only
+EOF
+}
+
 cmd_term() {
   need_cmd jq
   local node_id="${1:-node-1}"
@@ -568,6 +650,7 @@ Commands:
   mode                 Policy mode (get/guarded/aggressive [minutes])
   wg-vm-deploy         Deploy WireGuard server VM (wg-vm-deploy [node_id] [name] [template_id])
   term                 Execute allowlisted shell script via runner (term [node_id] <command>)
+  agent [minutes]      Enable timeboxed SSH agent access and print token
   bootstrap [quick]    One-command VM bootstrap (non-interactive quick mode)
   help                 Show this help
 EOF
@@ -596,6 +679,7 @@ main() {
     md) cmd="mode" ;;
     wvd) cmd="wg-vm-deploy" ;;
     te) cmd="term" ;;
+    ag) cmd="agent" ;;
     bs) cmd="bootstrap" ;;
   esac
   case "$cmd" in
@@ -619,6 +703,7 @@ main() {
     mode) cmd_policy_mode "$@" ;;
     wg-vm-deploy) cmd_wireguard_vm_deploy "$@" ;;
     term) cmd_term "$@" ;;
+    agent) cmd_agent "$@" ;;
     bootstrap) cmd_bootstrap "$@" ;;
     help|-h|--help) usage ;;
     *)
