@@ -31,7 +31,7 @@ docker_bin() {
     echo "docker"
     return
   fi
-  if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
     echo "sudo docker"
     return
   fi
@@ -59,8 +59,24 @@ install_wrappers() {
     return
   fi
   if command -v sudo >/dev/null 2>&1; then
-    sudo -n install -m 0755 "$src" /usr/local/bin/pm >/dev/null 2>&1 || true
-    sudo -n install -m 0755 "$src" /usr/local/bin/proxmaster >/dev/null 2>&1 || true
+    sudo install -m 0755 "$src" /usr/local/bin/pm >/dev/null 2>&1 || true
+    sudo install -m 0755 "$src" /usr/local/bin/proxmaster >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_repo_writable() {
+  if [ -w "$INSTALL_DIR/.git" ] && [ -w "$INSTALL_DIR/.git/objects" ]; then
+    return
+  fi
+  echo "[proxmaster] fixing repository permissions in $INSTALL_DIR ..."
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "[proxmaster] sudo not available; cannot repair repo permissions" >&2
+    exit 1
+  fi
+  sudo chown -R "$USER:$USER" "$INSTALL_DIR"
+  if [ ! -w "$INSTALL_DIR/.git" ] || [ ! -w "$INSTALL_DIR/.git/objects" ]; then
+    echo "[proxmaster] repository is still not writable after chown" >&2
+    exit 1
   fi
 }
 
@@ -82,11 +98,7 @@ cmd_update() {
   need_cmd docker
   ensure_env
   git config --global --add safe.directory "$INSTALL_DIR" >/dev/null 2>&1 || true
-
-  if [ ! -w "$INSTALL_DIR/.git" ]; then
-    echo "[proxmaster] no write permission for $INSTALL_DIR/.git (run once: sudo chown -R $USER:$USER $INSTALL_DIR)" >&2
-    exit 1
-  fi
+  ensure_repo_writable
 
   local has_local_changes="false"
   if ! git -C "$INSTALL_DIR" diff --quiet; then
