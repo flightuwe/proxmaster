@@ -10,6 +10,7 @@
 6. Join WireGuard/Tailscale network
 7. Restrict API access to overlay network only
 8. Validate:
+   - `proxmaster proof`
    - `/healthz`
    - `/cluster/overview`
    - `/controlplane/endpoint`

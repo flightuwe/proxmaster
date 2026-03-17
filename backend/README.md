@@ -42,6 +42,14 @@ $env:PROXMASTER_BREAKGLASS_DEFAULT_MIN="60"
 go run ./cmd/api
 ```
 
+Node VM shortcut commands (after installer):
+
+```bash
+proxmaster status
+proxmaster proof
+proxmaster update
+```
+
 ## Supported MCP tools
 
 - `cluster.get_state`

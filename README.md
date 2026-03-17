@@ -31,6 +31,7 @@ Neu fuer Remote-Cluster-Betrieb:
 - GitOps Pull Deploy (`/gitops/status`, `/gitops/sync`, `/gitops/rollback`)
 - SSH Break-Glass Toggle mit Timebox (`/access/breakglass/*`)
 - Ops-Runbooks/Skripte unter `infra/ops/*`
+- CLI Shortcuts: `proxmaster update`, `proxmaster proof`, `proxmaster status`
 
 ## Quick start (backend)
 

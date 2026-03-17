@@ -64,6 +64,8 @@ sync_repo() {
   chmod +x "$INSTALL_DIR/infra/ops/gitops/proxmaster-deploy.sh" || true
   chmod +x "$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh" || true
   chmod +x "$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh" || true
+  chmod +x "$INSTALL_DIR/infra/ops/cli/proxmaster" || true
+  ln -sf "$INSTALL_DIR/infra/ops/cli/proxmaster" /usr/local/bin/proxmaster || true
 }
 
 rand_token() {

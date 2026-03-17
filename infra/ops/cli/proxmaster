@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="${PROXMASTER_INSTALL_DIR:-/opt/proxmaster}"
+ENV_FILE="${PROXMASTER_ENV_FILE:-$INSTALL_DIR/infra/.env}"
+COMPOSE_FILE="${PROXMASTER_COMPOSE_FILE:-$INSTALL_DIR/infra/docker-compose.yml}"
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "[proxmaster] missing command: $1" >&2
+    exit 1
+  }
+}
+
+ensure_env() {
+  if [ ! -f "$ENV_FILE" ]; then
+    echo "[proxmaster] missing env file: $ENV_FILE" >&2
+    exit 1
+  fi
+}
+
+token() {
+  ensure_env
+  awk -F= '/^PROXMASTER_ADMIN_TOKEN=/{print $2}' "$ENV_FILE"
+}
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
+}
+
+cmd_update() {
+  need_cmd git
+  need_cmd docker
+  ensure_env
+  git -C "$INSTALL_DIR" fetch --all --prune
+  git -C "$INSTALL_DIR" checkout main
+  git -C "$INSTALL_DIR" pull --ff-only origin main
+  if [ -f "$INSTALL_DIR/backend/go.mod" ]; then
+    docker run --rm -v "$INSTALL_DIR/backend:/src" -w /src golang:1.22 go mod tidy >/dev/null 2>&1 || true
+  fi
+  compose up -d --build
+  echo "[proxmaster] update done"
+}
+
+cmd_proof() {
+  need_cmd curl
+  need_cmd jq
+  ensure_env
+  local t
+  t="$(token)"
+  echo "== healthz =="
+  curl -fsS http://127.0.0.1:8080/healthz | jq .
+  echo "== connectivity =="
+  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/connectivity/status | jq .
+  echo "== gitops =="
+  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/gitops/status | jq .
+  echo "== breakglass =="
+  curl -fsS -H "Authorization: Bearer $t" http://127.0.0.1:8080/access/breakglass | jq .
+}
+
+cmd_status() {
+  ensure_env
+  compose ps
+}
+
+cmd_logs() {
+  ensure_env
+  local svc="${1:-proxmaster-api}"
+  compose logs --tail=200 "$svc"
+}
+
+cmd_restart() {
+  ensure_env
+  local svc="${1:-proxmaster-api}"
+  compose restart "$svc"
+}
+
+cmd_token() {
+  token
+}
+
+usage() {
+  cat <<EOF
+Usage: proxmaster <command>
+
+Commands:
+  update               Pull latest code and redeploy stack
+  proof                Run quick health/connectivity proof checks
+  status               Show docker compose status
+  logs [service]       Show logs (default: proxmaster-api)
+  restart [service]    Restart service (default: proxmaster-api)
+  token                Print PROXMASTER_ADMIN_TOKEN
+  help                 Show this help
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "$cmd" in
+    update) cmd_update "$@" ;;
+    proof) cmd_proof "$@" ;;
+    status) cmd_status "$@" ;;
+    logs) cmd_logs "$@" ;;
+    restart) cmd_restart "$@" ;;
+    token) cmd_token "$@" ;;
+    help|-h|--help) usage ;;
+    *)
+      echo "[proxmaster] unknown command: $cmd" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
