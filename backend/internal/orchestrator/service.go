@@ -130,6 +130,12 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 		scope := stringFrom(params["scope"])
 		key := stringFrom(params["key"])
 		return s.px.ExplainSpec(ctx, scope, key)
+	case "spec.reconcile":
+		scope := stringFrom(params["scope"])
+		key := stringFrom(params["key"])
+		return s.px.ReconcileSpec(ctx, scope, key, stringFrom(params["reconcile_job_id"]))
+	case "spec.reconcile.all":
+		return s.px.ReconcileAllSpecs(ctx, stringFrom(params["reconcile_job_id"]))
 	case "backup.policy.simulate":
 		workloadID := stringFrom(params["workload_id"])
 		return s.px.SimulateBackupPolicy(ctx, workloadID)

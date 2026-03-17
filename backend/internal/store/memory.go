@@ -98,6 +98,23 @@ func NewMemoryStore() *MemoryStore {
 				RollbackSteps: []string{"disable new stack", "restore previous compose state"},
 				Parameters:    map[string]any{"docker_data_pool": "zfs-fast"},
 			},
+			"pfsense-gateway": {
+				Name:          "pfsense-gateway",
+				Version:       "1.0.0",
+				Description:   "Deploy pfSense VM with WAN/LAN interfaces and baseline firewall config",
+				ProvisionKind: "vm",
+				DefaultCPU:    2,
+				DefaultMemMB:  4096,
+				DefaultDiskGB: 20,
+				AnsibleRoles:  []string{"pfsense-bootstrap"},
+				HealthChecks:  []string{"icmp:lan-gateway", "https:443"},
+				RollbackSteps: []string{"restore previous pfSense config.xml", "revert interface mapping"},
+				Parameters: map[string]any{
+					"wan_bridge": "vmbr0",
+					"lan_bridge": "vmbr1",
+					"lan_cidr":   "10.13.37.1/24",
+				},
+			},
 		},
 		blueprintSpecs: make(map[string]models.ServiceBlueprintSpec),
 		policyMode: models.PolicyModeState{

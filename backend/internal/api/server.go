@@ -37,6 +37,7 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval, cp: cp, connSvc: connSvc, gitops: gitopsSvc, bgs: bgs}
 	r := http.NewServeMux()
 	r.HandleFunc("/", s.handleIndex)
+	r.HandleFunc("/webui", s.handleWebUI)
 	r.HandleFunc("/healthz", s.handleHealth)
 	r.HandleFunc("/auth/login", s.handleLogin)
 	r.HandleFunc("/auth/mfa/verify", s.handleMFAVerify)
@@ -107,11 +108,69 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"endpoints": map[string]string{
 			"health":        "/healthz",
 			"overview":      "/cluster/overview",
+			"webui":         "/webui",
 			"connectivity":  "/connectivity/status",
 			"wireguard":     "/vpn/wireguard/status",
 			"gitops_status": "/gitops/status",
 		},
 	})
+}
+
+func (s *Server) handleWebUI(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Proxmaster WebUI</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0b1220; color: #e5e7eb; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 10px; margin: 16px 0; }
+    button { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+    input { width: 100%; background: #111827; color: #e5e7eb; border: 1px solid #374151; padding: 8px; border-radius: 8px; }
+    pre { background: #020617; border: 1px solid #1f2937; border-radius: 8px; padding: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Proxmaster WebUI</h2>
+    <input id="token" placeholder="Bearer token" />
+    <div class="row">
+      <button onclick="call('GET','/state/all')">State All</button>
+      <button onclick="call('GET','/blueprints')">Blueprints</button>
+      <button onclick="call('GET','/jobs/timeline')">Timeline</button>
+      <button onclick="call('GET','/policy/mode')">Policy Mode</button>
+    </div>
+    <div class="row">
+      <button onclick="call('POST','/blueprints/plan',{name:'pfsense-gateway',node_id:'node-1',workload_name:'pfsense-gw'})">Plan pfSense</button>
+      <button onclick="call('POST','/blueprints/deploy',{name:'pfsense-gateway',node_id:'node-1',workload_name:'pfsense-gw'})">Deploy pfSense</button>
+      <button onclick="call('PUT','/spec/workloads/pfsense-gw',{id:'pfsense-gw',name:'pfsense-gw',kind:'vm',node_id:'node-1',cpu:2,memory_mb:4096,disk_gb:20,desired_power:'running'})">Spec pfSense</button>
+      <button onclick="call('POST','/policy/mode',{mode:'AGGRESSIVE_AUTO',duration_minutes:30,reauth_token:'reauth-ok',hardware_mfa:true,second_approver:'web-admin'})">Aggressive 30m</button>
+    </div>
+    <pre id="out">ready</pre>
+  </div>
+  <script>
+    const out = document.getElementById('out');
+    const token = document.getElementById('token');
+    function headers() {
+      const h = { 'Content-Type': 'application/json' };
+      if (token.value.trim()) h['Authorization'] = 'Bearer ' + token.value.trim();
+      return h;
+    }
+    async function call(method, path, body) {
+      try {
+        const res = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+        const txt = await res.text();
+        out.textContent = txt;
+      } catch (e) {
+        out.textContent = 'error: ' + e;
+      }
+    }
+  </script>
+</body>
+</html>`))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

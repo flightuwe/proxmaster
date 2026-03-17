@@ -52,4 +52,37 @@ class ProxmasterApi {
             return resp.body?.string() ?: "no body"
         }
     }
+
+    fun get(path: String): String {
+        val request = Request.Builder()
+            .url("$baseUrl$path")
+            .addHeader("Authorization", "Bearer $token")
+            .get()
+            .build()
+        client.newCall(request).execute().use { resp ->
+            return resp.body?.string() ?: "no body"
+        }
+    }
+
+    fun post(path: String, jsonBody: String): String {
+        val request = Request.Builder()
+            .url("$baseUrl$path")
+            .addHeader("Authorization", "Bearer $token")
+            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+            .build()
+        client.newCall(request).execute().use { resp ->
+            return resp.body?.string() ?: "no body"
+        }
+    }
+
+    fun put(path: String, jsonBody: String): String {
+        val request = Request.Builder()
+            .url("$baseUrl$path")
+            .addHeader("Authorization", "Bearer $token")
+            .put(jsonBody.toRequestBody("application/json".toMediaType()))
+            .build()
+        client.newCall(request).execute().use { resp ->
+            return resp.body?.string() ?: "no body"
+        }
+    }
 }

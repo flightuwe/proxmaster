@@ -2,9 +2,15 @@ package proxmox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"proxmaster/backend/internal/controlplane"
@@ -514,14 +520,16 @@ func (c *Client) ExplainSpec(_ context.Context, scope, key string) (map[string]a
 	if !ok {
 		return nil, errors.New("spec not found")
 	}
+	observed, drift, delta := c.computeObservedAndDrift(scope, key, spec.Desired)
+	if updated, ok := c.store.SetSpecObserved(scope, key, observed, drift, ""); ok {
+		spec = updated
+	}
 	return map[string]any{
-		"changed": false,
-		"scope":   scope,
-		"key":     key,
-		"spec":    spec,
-		"drift_delta": map[string]any{
-			"drift_status": spec.DriftStatus,
-		},
+		"changed":     false,
+		"scope":       scope,
+		"key":         key,
+		"spec":        spec,
+		"drift_delta": delta,
 	}, nil
 }
 
@@ -573,6 +581,7 @@ func (c *Client) PlanBlueprint(_ context.Context, params map[string]any) (map[st
 			"provision_kind": bp.ProvisionKind,
 			"steps":          []string{"provision workload via template+cloud-init", "run ansible roles", "health verify", "bind backup policy"},
 			"rollback":       bp.RollbackSteps,
+			"ansible_check":  "planned",
 		},
 	}, nil
 }
@@ -594,9 +603,12 @@ func (c *Client) DeployBlueprint(ctx context.Context, params map[string]any) (ma
 	if workloadName == "" {
 		workloadName = "svc-" + name
 	}
+	templateID := stringFrom(params["template_id"])
 	var created map[string]any
 	var err error
-	if bp.ProvisionKind == "lxc" {
+	if templateID != "" {
+		created, err = c.CloneVM(ctx, templateID, "", nodeID, workloadName)
+	} else if bp.ProvisionKind == "lxc" {
 		created, err = c.CreateLXC(ctx, workloadName, nodeID, bp.DefaultCPU, bp.DefaultMemMB, bp.DefaultDiskGB)
 	} else {
 		created, err = c.CreateVM(ctx, workloadName, nodeID, bp.DefaultCPU, bp.DefaultMemMB, bp.DefaultDiskGB)
@@ -626,13 +638,18 @@ func (c *Client) DeployBlueprint(ctx context.Context, params map[string]any) (ma
 		},
 		Parameters: params,
 	})
+	ansibleCheck := c.runAnsibleRoles(ctx, bp, spec, true)
+	ansibleApply := c.runAnsibleRoles(ctx, bp, spec, false)
+	verify, _ := c.VerifyBlueprint(ctx, map[string]any{"name": name})
 	return map[string]any{
-		"changed":        true,
-		"blueprint":      spec,
-		"provision":      created,
-		"ansible_status": "queued",
-		"health_status":  "pending",
-		"drift_delta":    map[string]any{"blueprint": name, "status": "deployed"},
+		"changed":       true,
+		"blueprint":     spec,
+		"provision":     created,
+		"ansible_check": ansibleCheck,
+		"ansible_apply": ansibleApply,
+		"verify":        verify,
+		"health_status": "pending",
+		"drift_delta":   map[string]any{"blueprint": name, "status": "deployed"},
 	}, nil
 }
 
@@ -697,6 +714,178 @@ func (c *Client) SetPolicyMode(_ context.Context, modeRaw, actor string, duratio
 		"aggressive":   st.Mode == models.PolicyModeAggressive,
 		"auto_expires": st.AggressiveUntil,
 	}, nil
+}
+
+func (c *Client) ReconcileSpec(_ context.Context, scope, key, reconcileJobID string) (map[string]any, error) {
+	spec, ok := c.store.GetSpec(scope, key)
+	if !ok {
+		return nil, errors.New("spec not found")
+	}
+	observed, drift, delta := c.computeObservedAndDrift(scope, key, spec.Desired)
+	updated, _ := c.store.SetSpecObserved(scope, key, observed, drift, reconcileJobID)
+	return map[string]any{
+		"changed":     true,
+		"scope":       scope,
+		"key":         key,
+		"spec":        updated,
+		"drift_delta": delta,
+	}, nil
+}
+
+func (c *Client) ReconcileAllSpecs(ctx context.Context, reconcileJobID string) (map[string]any, error) {
+	scopes := []string{"cluster", "storage", "network", "backup", "workloads", "blueprint"}
+	results := make([]map[string]any, 0)
+	for _, scope := range scopes {
+		group := c.store.ListSpecs(scope)
+		for key := range group {
+			out, err := c.ReconcileSpec(ctx, scope, key, reconcileJobID)
+			if err != nil {
+				results = append(results, map[string]any{"scope": scope, "key": key, "error": err.Error()})
+				continue
+			}
+			results = append(results, map[string]any{"scope": scope, "key": key, "result": out})
+		}
+	}
+	return map[string]any{"changed": true, "results": results}, nil
+}
+
+func (c *Client) computeObservedAndDrift(scope, key string, desired map[string]any) (map[string]any, models.DriftStatus, map[string]any) {
+	observed := c.observedFor(scope, key)
+	delta := diffMaps(desired, observed)
+	if len(desired) == 0 {
+		return observed, models.DriftPending, map[string]any{"summary": "no desired set", "mismatches": []any{}}
+	}
+	if len(delta) == 0 {
+		return observed, models.DriftInSync, map[string]any{"summary": "in sync", "mismatches": []any{}}
+	}
+	return observed, models.DriftDrifted, map[string]any{"summary": "drift detected", "mismatches": delta}
+}
+
+func (c *Client) observedFor(scope, key string) map[string]any {
+	state := c.store.ClusterState()
+	switch scope {
+	case "cluster":
+		return map[string]any{"ha_enabled": state.HAEnabled, "nodes_online": len(state.Nodes)}
+	case "storage":
+		return map[string]any{"pools": state.Pools, "datastores": state.Datastores}
+	case "network":
+		return map[string]any{"networks": state.Networks}
+	case "backup":
+		return map[string]any{"policies": c.store.ListBackupPolicies(), "targets": c.store.ListBackupTargets()}
+	case "workloads":
+		for _, vm := range state.VMs {
+			if vm.ID == key {
+				return map[string]any{
+					"id": vm.ID, "name": vm.Name, "kind": vm.Kind, "node_id": vm.NodeID,
+					"cpu": vm.CPU, "memory_mb": vm.MemoryMB, "disk_gb": vm.DiskGB, "desired_power": vm.Power,
+				}
+			}
+		}
+		return map[string]any{}
+	case "blueprint":
+		for _, b := range c.store.ListBlueprintSpecs() {
+			if b.Name == key {
+				raw, _ := toMap(b)
+				return raw
+			}
+		}
+		return map[string]any{}
+	default:
+		return map[string]any{}
+	}
+}
+
+func diffMaps(desired, observed map[string]any) []map[string]any {
+	keys := make([]string, 0, len(desired))
+	for k := range desired {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	mismatches := make([]map[string]any, 0)
+	for _, key := range keys {
+		dv := normalizeValue(desired[key])
+		ov := normalizeValue(observed[key])
+		if !reflect.DeepEqual(dv, ov) {
+			mismatches = append(mismatches, map[string]any{
+				"field":    key,
+				"desired":  desired[key],
+				"observed": observed[key],
+			})
+		}
+	}
+	return mismatches
+}
+
+func normalizeValue(v any) any {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return v
+	}
+	return out
+}
+
+func (c *Client) runAnsibleRoles(ctx context.Context, bp models.BlueprintDefinition, spec models.ServiceBlueprintSpec, checkMode bool) map[string]any {
+	if len(bp.AnsibleRoles) == 0 {
+		return map[string]any{"status": "skipped", "reason": "no ansible roles configured"}
+	}
+	ansiblePlaybook, err := exec.LookPath("ansible-playbook")
+	if err != nil {
+		return map[string]any{"status": "skipped", "reason": "ansible-playbook not found"}
+	}
+	inventory := os.Getenv("PROXMASTER_ANSIBLE_INVENTORY")
+	playbook := os.Getenv("PROXMASTER_ANSIBLE_PLAYBOOK")
+	if strings.TrimSpace(playbook) == "" {
+		playbook = "site.yml"
+	}
+	args := []string{playbook}
+	if strings.TrimSpace(inventory) != "" {
+		args = append(args, "-i", inventory)
+	}
+	if checkMode {
+		args = append(args, "--check")
+	}
+	args = append(args, "-e", "roles="+strings.Join(bp.AnsibleRoles, ","))
+	args = append(args, "-e", "blueprint_name="+bp.Name)
+	args = append(args, "-e", "workload_name="+spec.Workload.Name)
+	cmd := exec.CommandContext(ctx, ansiblePlaybook, args...)
+	out, runErr := cmd.CombinedOutput()
+	return map[string]any{
+		"status":     ternary(runErr == nil, "ok", "failed"),
+		"check_mode": checkMode,
+		"command":    append([]string{ansiblePlaybook}, args...),
+		"output":     string(out),
+		"error":      errString(runErr),
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func ternary[T any](ok bool, a, b T) T {
+	if ok {
+		return a
+	}
+	return b
+}
+
+func toMap(v any) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func stringFrom(v any) string {

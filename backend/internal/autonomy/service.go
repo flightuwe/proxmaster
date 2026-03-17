@@ -3,6 +3,7 @@ package autonomy
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,17 +96,18 @@ func (s *Service) runOnce(ctx context.Context) {
 	if !ok {
 		return
 	}
-	if task.Type == "spec.reconcile.all" {
-		s.reconcileAllSpecs(task.ID)
+	if strings.HasPrefix(task.Type, "deadletter.") {
+		s.store.CompleteAgentTask(task.ID, map[string]any{"dead_letter_ack": true}, "")
 		return
 	}
-	if task.Type == "spec.reconcile" {
-		s.reconcileOneSpec(task.ID, task.Payload)
-		return
+	params := task.Payload
+	if params == nil {
+		params = map[string]any{}
 	}
+	params["reconcile_job_id"] = task.ID
 	resp, err := s.mcpSvc.HandleCall(ctx, models.MCPCallRequest{
 		Tool:           task.Type,
-		Params:         task.Payload,
+		Params:         params,
 		Actor:          "autonomy-worker",
 		ApproveNow:     false,
 		HardwareMFA:    false,
@@ -138,51 +140,6 @@ func (s *Service) runOnce(ctx context.Context) {
 		return
 	}
 	s.store.CompleteAgentTask(task.ID, result, "")
-}
-
-func (s *Service) reconcileAllSpecs(taskID string) {
-	scopes := []string{"cluster", "storage", "network", "backup", "workloads", "blueprint"}
-	queued := 0
-	for _, scope := range scopes {
-		group := s.store.ListSpecs(scope)
-		for key := range group {
-			s.store.CreateAgentTask(models.AgentTask{
-				Type:        "spec.reconcile",
-				Payload:     map[string]any{"scope": scope, "key": key},
-				RequestedBy: "autonomy-worker",
-				Priority:    80,
-				MaxAttempts: 3,
-			})
-			queued++
-		}
-	}
-	s.store.CompleteAgentTask(taskID, map[string]any{"queued_reconcile_tasks": queued}, "")
-}
-
-func (s *Service) reconcileOneSpec(taskID string, payload map[string]any) {
-	scope, _ := payload["scope"].(string)
-	key, _ := payload["key"].(string)
-	if scope == "" || key == "" {
-		s.store.CompleteAgentTask(taskID, nil, "missing scope/key")
-		return
-	}
-	spec, ok := s.store.GetSpec(scope, key)
-	if !ok {
-		s.store.CompleteAgentTask(taskID, nil, "spec not found")
-		return
-	}
-	drift := models.DriftInSync
-	if len(spec.Desired) == 0 {
-		drift = models.DriftPending
-	}
-	observed := map[string]any{
-		"reconciled_at_utc": time.Now().UTC().Format(time.RFC3339),
-		"scope":             scope,
-		"key":               key,
-		"desired_hash_hint": len(spec.Desired),
-	}
-	updated, _ := s.store.SetSpecObserved(scope, key, observed, drift, taskID)
-	s.store.CompleteAgentTask(taskID, map[string]any{"spec": updated, "phase": "reconcile"}, "")
 }
 
 func (s *Service) completeWithRetry(task models.AgentTask, result map[string]any, errMsg string) {

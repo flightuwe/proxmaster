@@ -127,6 +127,8 @@ Authorization: Bearer <token>
 - Blueprint catalog + deploy/verify/update/rollback flows (`/blueprints/*`)
 - Policy mode switching (`/policy/mode`) with time-boxed aggressive auto mode
 - Autonomy task queue with retries/priority/dead-letter + timeline (`/autonomy/tasks`, `/jobs/timeline`)
+- Minimal integrated browser UI at `/webui` for state/spec/blueprint/policy actions
+- Blueprint catalog includes `pfsense-gateway` bootstrap flow for test deployments
 
 ## Remaining production hardening
 

@@ -20,24 +20,21 @@ class MainActivity : AppCompatActivity() {
         }
 
         val btnState = Button(this).apply {
-            text = "Cluster State"
+            text = "State: All"
             setOnClickListener {
                 runInBackground {
-                    api.callTool(
-                        tool = "cluster.get_state",
-                        params = "{}"
-                    )
+                    api.get("/state/all")
                 }
             }
         }
 
-        val btnMigrate = Button(this).apply {
-            text = "Migrate VM 101 -> node-2"
+        val btnSpecWorkload = Button(this).apply {
+            text = "Spec: Workload pfSense"
             setOnClickListener {
                 runInBackground {
-                    api.callTool(
-                        tool = "vm.migrate",
-                        params = "{\"vm_id\":\"101\",\"target_node\":\"node-2\"}"
+                    api.put(
+                        "/spec/workloads/pfsense-gw",
+                        "{\"id\":\"pfsense-gw\",\"name\":\"pfsense-gw\",\"kind\":\"vm\",\"node_id\":\"node-1\",\"cpu\":2,\"memory_mb\":4096,\"disk_gb\":20,\"desired_power\":\"running\"}"
                     )
                 }
             }
@@ -45,25 +42,25 @@ class MainActivity : AppCompatActivity() {
 
         val wizardTitle = TextView(this).apply { text = "Wizard Mode" }
 
-        val btnWizardRebuildPlan = Button(this).apply {
-            text = "Wizard: Plan Rebuild All Pools"
+        val btnWizardBlueprintPlan = Button(this).apply {
+            text = "Wizard: Plan pfSense Blueprint"
             setOnClickListener {
                 runInBackground {
-                    api.callApproveTool(
-                        tool = "storage.pool.rebuild_all.plan",
-                        params = "{}"
+                    api.post(
+                        "/blueprints/plan",
+                        "{\"name\":\"pfsense-gateway\",\"node_id\":\"node-1\",\"workload_name\":\"pfsense-gw\"}"
                     )
                 }
             }
         }
 
-        val btnWizardPolicy = Button(this).apply {
-            text = "Wizard: Backup Policy VM 101"
+        val btnWizardBlueprintDeploy = Button(this).apply {
+            text = "Wizard: Deploy pfSense Blueprint"
             setOnClickListener {
                 runInBackground {
-                    api.callApproveTool(
-                        tool = "backup.policy.upsert",
-                        params = "{\"workload_id\":\"101\",\"workload_kind\":\"vm\",\"priority\":200,\"override\":true,\"schedule\":\"0 2 * * *\",\"target_id\":\"target-pbs-1\",\"rpo\":\"24h\",\"retention\":\"30d\",\"encryption\":true,\"immutability\":true,\"verify_restore\":true}"
+                    api.post(
+                        "/blueprints/deploy",
+                        "{\"name\":\"pfsense-gateway\",\"node_id\":\"node-1\",\"workload_name\":\"pfsense-gw\"}"
                     )
                 }
             }
@@ -71,26 +68,32 @@ class MainActivity : AppCompatActivity() {
 
         val expertTitle = TextView(this).apply { text = "Expert Mode" }
 
-        val btnExpertInventory = Button(this).apply {
-            text = "Expert: Storage Inventory Sync"
+        val btnExpertCatalog = Button(this).apply {
+            text = "Expert: Blueprint Catalog"
             setOnClickListener {
                 runInBackground {
-                    api.callTool(
-                        tool = "storage.inventory.sync",
-                        params = "{}"
+                    api.get("/blueprints")
+                }
+            }
+        }
+
+        val btnExpertAggressive = Button(this).apply {
+            text = "Expert: Aggressive Auto 30m"
+            setOnClickListener {
+                runInBackground {
+                    api.post(
+                        "/policy/mode",
+                        "{\"mode\":\"AGGRESSIVE_AUTO\",\"duration_minutes\":30,\"reauth_token\":\"reauth-ok\",\"hardware_mfa\":true,\"second_approver\":\"ops-admin\"}"
                     )
                 }
             }
         }
 
-        val btnExpertRestorePlan = Button(this).apply {
-            text = "Expert: Plan Restore VM 101"
+        val btnExpertTimeline = Button(this).apply {
+            text = "Expert: Jobs Timeline"
             setOnClickListener {
                 runInBackground {
-                    api.callApproveTool(
-                        tool = "backup.restore.plan",
-                        params = "{\"workload_id\":\"101\",\"target_id\":\"target-pbs-1\"}"
-                    )
+                    api.get("/jobs/timeline")
                 }
             }
         }
@@ -100,13 +103,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         root.addView(btnState)
-        root.addView(btnMigrate)
+        root.addView(btnSpecWorkload)
         root.addView(wizardTitle)
-        root.addView(btnWizardRebuildPlan)
-        root.addView(btnWizardPolicy)
+        root.addView(btnWizardBlueprintPlan)
+        root.addView(btnWizardBlueprintDeploy)
         root.addView(expertTitle)
-        root.addView(btnExpertInventory)
-        root.addView(btnExpertRestorePlan)
+        root.addView(btnExpertCatalog)
+        root.addView(btnExpertAggressive)
+        root.addView(btnExpertTimeline)
         root.addView(output)
 
         val scroll = ScrollView(this).apply { addView(root) }
