@@ -270,7 +270,7 @@ api_call() {
 
 cmd_wg_status() {
   need_cmd jq
-  api_call GET /vpn/wireguard/status | jq .
+  api_call GET /connectivity/status | jq '.wireguard // .'
 }
 
 cmd_wg_plan() {
