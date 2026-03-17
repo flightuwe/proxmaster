@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"proxmaster/backend/internal/breakglass"
 	"proxmaster/backend/internal/config"
+	"proxmaster/backend/internal/connectivity"
 	"proxmaster/backend/internal/controlplane"
+	"proxmaster/backend/internal/gitops"
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/mcp"
 	"proxmaster/backend/internal/models"
@@ -22,11 +27,14 @@ type Server struct {
 	mcpSvc   *mcp.Service
 	gateEval *health.GateEvaluator
 	cp       *controlplane.Manager
+	connSvc  *connectivity.Service
+	gitops   *gitops.Service
+	bgs      *breakglass.Service
 	handler  http.Handler
 }
 
-func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator, cp *controlplane.Manager) *Server {
-	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval, cp: cp}
+func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator, cp *controlplane.Manager, connSvc *connectivity.Service, gitopsSvc *gitops.Service, bgs *breakglass.Service) *Server {
+	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval, cp: cp, connSvc: connSvc, gitops: gitopsSvc, bgs: bgs}
 	r := http.NewServeMux()
 	r.HandleFunc("/healthz", s.handleHealth)
 	r.HandleFunc("/auth/login", s.handleLogin)
@@ -47,6 +55,13 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/policy/simulate", s.withAuth(s.handlePolicySimulate))
 	r.HandleFunc("/policy/explain", s.withAuth(s.handlePolicyExplain))
 	r.HandleFunc("/controlplane/endpoint", s.withAuth(s.handleControlPlaneEndpoint))
+	r.HandleFunc("/connectivity/status", s.withAuth(s.handleConnectivityStatus))
+	r.HandleFunc("/gitops/status", s.withAuth(s.handleGitOpsStatus))
+	r.HandleFunc("/gitops/sync", s.withAuth(s.handleGitOpsSync))
+	r.HandleFunc("/gitops/rollback", s.withAuth(s.handleGitOpsRollback))
+	r.HandleFunc("/access/breakglass", s.withAuth(s.handleBreakglassStatus))
+	r.HandleFunc("/access/breakglass/enable", s.withAuth(s.handleBreakglassEnable))
+	r.HandleFunc("/access/breakglass/disable", s.withAuth(s.handleBreakglassDisable))
 	r.HandleFunc("/mcp/call", s.withAuth(s.handleMCPCall))
 	r.HandleFunc("/mcp/approve", s.withAuth(s.handleMCPApprove))
 	s.handler = loggingMiddleware(r)
@@ -231,7 +246,7 @@ func (s *Server) handlePolicyExplain(w http.ResponseWriter, _ *http.Request) {
 	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":        "SRE_MODE_FAIL_CLOSED",
-		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate"},
+		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate", "ssh.breakglass.enable"},
 		"health_gate": s.gateEval.Explain(snap),
 	})
 }
@@ -242,6 +257,174 @@ func (s *Server) handleControlPlaneEndpoint(w http.ResponseWriter, _ *http.Reque
 		"endpoint":     s.cp.Endpoint(),
 		"current_node": s.cp.CurrentNode(),
 	})
+}
+
+func (s *Server) handleConnectivityStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	out := map[string]any{
+		"checked_at_utc": time.Now().UTC().Format(time.RFC3339),
+	}
+	if s.connSvc != nil {
+		out["wireguard"] = s.connSvc.Status(r.Context())
+	}
+	if s.gitops != nil {
+		out["gitops"] = s.gitops.Status()
+	}
+	if s.bgs != nil {
+		out["breakglass"] = s.bgs.Status(r.Context())
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleGitOpsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	if s.gitops == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "gitops not configured"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.gitops.Status())
+}
+
+func (s *Server) handleGitOpsSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor          string `json:"actor"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:           "gitops.sync.now",
+		Params:         map[string]any{"actor": req.Actor},
+		Actor:          req.Actor,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleGitOpsRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor          string `json:"actor"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:           "gitops.rollback",
+		Params:         map[string]any{"actor": req.Actor},
+		Actor:          req.Actor,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleBreakglassStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	if s.bgs == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "breakglass not configured"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.bgs.Status(r.Context()))
+}
+
+func (s *Server) handleBreakglassEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor          string `json:"actor"`
+		DurationMin    int    `json:"duration_minutes"`
+		ReauthToken    string `json:"reauth_token"`
+		SecondApprover string `json:"second_approver"`
+		HardwareMFA    bool   `json:"hardware_mfa"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	approveNow := req.ReauthToken == "reauth-ok"
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:           "ssh.breakglass.enable",
+		Params:         map[string]any{"duration_minutes": req.DurationMin, "actor": req.Actor},
+		Actor:          req.Actor,
+		ApproveNow:     approveNow,
+		SecondApprover: req.SecondApprover,
+		HardwareMFA:    req.HardwareMFA,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleBreakglassDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Actor          string `json:"actor"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "android-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:           "ssh.breakglass.disable",
+		Params:         map[string]any{"actor": req.Actor},
+		Actor:          req.Actor,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
@@ -275,14 +458,14 @@ func (s *Server) handleMCPApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Tool           string                 `json:"tool"`
-		Params         map[string]any         `json:"params"`
-		Actor          string                 `json:"actor"`
-		ReauthToken    string                 `json:"reauth_token"`
-		SecondApprover string                 `json:"second_approver"`
-		HardwareMFA    bool                   `json:"hardware_mfa"`
-		IdempotencyKey string                 `json:"idempotency_key"`
-		Metadata       map[string]any         `json:"metadata"`
+		Tool           string         `json:"tool"`
+		Params         map[string]any `json:"params"`
+		Actor          string         `json:"actor"`
+		ReauthToken    string         `json:"reauth_token"`
+		SecondApprover string         `json:"second_approver"`
+		HardwareMFA    bool           `json:"hardware_mfa"`
+		IdempotencyKey string         `json:"idempotency_key"`
+		Metadata       map[string]any `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
@@ -333,4 +516,13 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": errors.New("method not allowed").Error()})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 }

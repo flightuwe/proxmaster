@@ -18,6 +18,18 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentT
     actor = "demo"
 } | ConvertTo-Json)
 
+Write-Host "1c) Connectivity status (WireGuard/GitOps/Break-Glass)"
+Invoke-RestMethod -Method Get -Uri "$base/connectivity/status" -Headers $headers
+
+Write-Host "1d) GitOps status"
+Invoke-RestMethod -Method Get -Uri "$base/gitops/status" -Headers $headers
+
+Write-Host "1e) GitOps sync now"
+Invoke-RestMethod -Method Post -Uri "$base/gitops/sync" -Headers $headers -ContentType "application/json" -Body (@{
+    actor = "demo"
+    idempotency_key = "demo-gitops-sync-001"
+} | ConvertTo-Json)
+
 Write-Host "2) Hard-blocked network apply"
 Invoke-RestMethod -Method Post -Uri "$base/mcp/call" -Headers $headers -ContentType "application/json" -Body (@{
     tool = "network.apply"
@@ -103,3 +115,13 @@ Invoke-RestMethod -Method Post -Uri "$base/mcp/approve" -Headers $headers -Conte
     second_approver = "ops-admin"
     idempotency_key = "demo-policy-upsert-001"
 } | ConvertTo-Json -Depth 5)
+
+Write-Host "11) Break-glass SSH enable (high-risk, dual approval)"
+Invoke-RestMethod -Method Post -Uri "$base/access/breakglass/enable" -Headers $headers -ContentType "application/json" -Body (@{
+    actor = "demo"
+    duration_minutes = 60
+    reauth_token = "reauth-ok"
+    hardware_mfa = $true
+    second_approver = "ops-admin"
+    idempotency_key = "demo-bg-enable-001"
+} | ConvertTo-Json)

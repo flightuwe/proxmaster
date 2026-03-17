@@ -7,6 +7,9 @@ Go control plane implementing:
 - Jobs, audit, incidents (`/jobs`, `/jobs/{id}`, `/audit`, `/incidents`)
 - Policy API (`/policy/simulate`, `/policy/explain`)
 - Control-plane endpoint (`/controlplane/endpoint`)
+- Connectivity status (`/connectivity/status`)
+- GitOps status/sync/rollback (`/gitops/status`, `/gitops/sync`, `/gitops/rollback`)
+- Break-glass SSH status/toggle (`/access/breakglass*`)
 - MCP tool execution (`/mcp/call`) + approval path (`/mcp/approve`)
 - Node runner heartbeat endpoint (`/nodes/heartbeat`)
 
@@ -26,13 +29,30 @@ $env:PROXMASTER_PROXMOX_API_BASE_URL="https://proxmox-node1:8006/api2/json"
 $env:PROXMASTER_PROXMOX_API_TOKEN_ID="root@pam!proxmaster"
 $env:PROXMASTER_PROXMOX_API_TOKEN_SECRET="<secret>"
 $env:PROXMASTER_PROXMOX_INSECURE_TLS="false"
+$env:PROXMASTER_WIREGUARD_INTERFACE="wg0"
+$env:PROXMASTER_GITOPS_REPO_DIR="/opt/proxmaster"
+$env:PROXMASTER_GITOPS_BRANCH="main"
+$env:PROXMASTER_GITOPS_COMPOSE_FILE="/opt/proxmaster/infra/docker-compose.yml"
+$env:PROXMASTER_GITOPS_ENV_FILE="/opt/proxmaster/infra/.env"
+$env:PROXMASTER_GITOPS_HEALTH_URL="http://127.0.0.1:8080/healthz"
+$env:PROXMASTER_GITOPS_ROLLBACK_ON_FAIL="true"
+$env:PROXMASTER_BREAKGLASS_ENABLE_CMD="/opt/proxmaster/infra/ops/breakglass/ssh-breakglass-enable.sh 22 10.13.13.0/24"
+$env:PROXMASTER_BREAKGLASS_DISABLE_CMD="/opt/proxmaster/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24"
+$env:PROXMASTER_BREAKGLASS_DEFAULT_MIN="60"
 go run ./cmd/api
 ```
 
 ## Supported MCP tools
 
 - `cluster.get_state`
+- `connectivity.status`
 - `proxmox.connection.test`
+- `gitops.status`
+- `gitops.sync.now`
+- `gitops.rollback`
+- `ssh.breakglass.status`
+- `ssh.breakglass.enable`
+- `ssh.breakglass.disable`
 - `node.set_maintenance`
 - `vm.migrate`
 - `proxmaster.self_migrate`
@@ -112,6 +132,17 @@ Authorization: Bearer <token>
 - Provide token via env vars above.
 - Validate connection:
   - `POST /mcp/call` with tool `proxmox.connection.test`
+
+## Remote access and GitOps
+
+- WireGuard should be the only WAN ingress.
+- Keep API/SSH reachable only from WG subnet.
+- Enable VM-side pull deploy with systemd:
+  - `infra/ops/gitops/proxmaster-gitops.service`
+  - `infra/ops/gitops/proxmaster-gitops.timer`
+- Break-glass SSH remains default OFF and can be time-boxed via:
+  - `POST /access/breakglass/enable`
+  - `POST /access/breakglass/disable`
 
 ## Tests
 

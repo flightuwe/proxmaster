@@ -111,6 +111,62 @@ paths:
       responses:
         "200":
           description: Endpoint details
+  /connectivity/status:
+    get:
+      summary: WireGuard, GitOps and break-glass connectivity status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Connectivity status
+  /gitops/status:
+    get:
+      summary: Get GitOps sync/deploy status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: GitOps status
+  /gitops/sync:
+    post:
+      summary: Trigger GitOps sync now
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sync job response
+  /gitops/rollback:
+    post:
+      summary: Roll back to last known stable commit
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rollback job response
+  /access/breakglass:
+    get:
+      summary: Get break-glass SSH status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Break-glass status
+  /access/breakglass/enable:
+    post:
+      summary: Enable break-glass SSH (time-boxed)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Break-glass enable response
+  /access/breakglass/disable:
+    post:
+      summary: Disable break-glass SSH
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Break-glass disable response
   /mcp/call:
     post:
       summary: Execute MCP tool call
@@ -148,7 +204,9 @@ paths:
           description: Tool execution result
       description: |
         Includes storage/backup tools:
-        `proxmox.connection.test`,
+        `connectivity.status`, `proxmox.connection.test`,
+        `gitops.status`, `gitops.sync.now`, `gitops.rollback`,
+        `ssh.breakglass.status`, `ssh.breakglass.enable`, `ssh.breakglass.disable`,
         `storage.inventory.sync`, `storage.pool.plan_apply`, `storage.pool.rebuild_all.plan`,
         `storage.pool.rebuild_all.execute`, `storage.replication.plan_apply`, `storage.health.explain`,
         `backup.policy.upsert`, `backup.policy.explain`, `backup.run.now`,

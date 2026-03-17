@@ -60,10 +60,18 @@ sync_repo() {
     mkdir -p "$INSTALL_DIR"
     git clone "$REPO_URL" "$INSTALL_DIR"
   fi
+  chmod +x "$INSTALL_DIR/infra/bootstrap/install-node1.sh" || true
+  chmod +x "$INSTALL_DIR/infra/ops/gitops/proxmaster-deploy.sh" || true
+  chmod +x "$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh" || true
+  chmod +x "$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh" || true
 }
 
 rand_token() {
-  tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 24
+    return
+  fi
+  cat /proc/sys/kernel/random/uuid | tr -d '-'
 }
 
 write_env_file() {
@@ -81,6 +89,16 @@ write_env_file() {
   local pve_token_id="${12}"
   local pve_token_secret="${13}"
   local pve_insecure_tls="${14}"
+  local wg_interface="${15}"
+  local gitops_repo_dir="${16}"
+  local gitops_branch="${17}"
+  local gitops_compose_file="${18}"
+  local gitops_env_file="${19}"
+  local gitops_health_url="${20}"
+  local gitops_rollback_on_fail="${21}"
+  local breakglass_enable_cmd="${22}"
+  local breakglass_disable_cmd="${23}"
+  local breakglass_default_min="${24}"
 
   cat >"$INFRA_ENV_FILE" <<EOF
 PROXMASTER_LISTEN_ADDR=:8080
@@ -99,6 +117,16 @@ PROXMASTER_PROXMOX_API_BASE_URL=$pve_api_base
 PROXMASTER_PROXMOX_API_TOKEN_ID=$pve_token_id
 PROXMASTER_PROXMOX_API_TOKEN_SECRET=$pve_token_secret
 PROXMASTER_PROXMOX_INSECURE_TLS=$pve_insecure_tls
+PROXMASTER_WIREGUARD_INTERFACE=$wg_interface
+PROXMASTER_GITOPS_REPO_DIR=$gitops_repo_dir
+PROXMASTER_GITOPS_BRANCH=$gitops_branch
+PROXMASTER_GITOPS_COMPOSE_FILE=$gitops_compose_file
+PROXMASTER_GITOPS_ENV_FILE=$gitops_env_file
+PROXMASTER_GITOPS_HEALTH_URL=$gitops_health_url
+PROXMASTER_GITOPS_ROLLBACK_ON_FAIL=$gitops_rollback_on_fail
+PROXMASTER_BREAKGLASS_ENABLE_CMD=$breakglass_enable_cmd
+PROXMASTER_BREAKGLASS_DISABLE_CMD=$breakglass_disable_cmd
+PROXMASTER_BREAKGLASS_DEFAULT_MIN=$breakglass_default_min
 RUNNER_LISTEN_ADDR=:9091
 RUNNER_NODE_ID=$runner_node_id
 RUNNER_SHARED_SECRET=$runner_secret
@@ -127,11 +155,16 @@ Stack:
 - API:    http://<node1-ip>:8080
 - Runner: http://<node1-ip>:9091
 - Env:    $INFRA_ENV_FILE
+
+Remote Ops:
+- Connectivity: GET /connectivity/status
+- GitOps:       GET /gitops/status, POST /gitops/sync, POST /gitops/rollback
+- Break-Glass:  GET /access/breakglass, POST /access/breakglass/enable|disable
 EOF
 }
 
 quick_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min
   admin_token="$(rand_token)"
   store_backend="postgres"
   pg_dsn="postgres://proxmaster:proxmaster@postgres:5432/proxmaster?sslmode=disable"
@@ -146,14 +179,24 @@ quick_install() {
   pve_token_id=""
   pve_token_secret=""
   pve_insecure_tls="false"
+  wg_interface="wg0"
+  gitops_repo_dir="$INSTALL_DIR"
+  gitops_branch="main"
+  gitops_compose_file="$INSTALL_DIR/infra/docker-compose.yml"
+  gitops_env_file="$INFRA_ENV_FILE"
+  gitops_health_url="http://127.0.0.1:8080/healthz"
+  gitops_rollback_on_fail="true"
+  breakglass_enable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh 22 10.13.13.0/24"
+  breakglass_disable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24"
+  breakglass_default_min="60"
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls"
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min"
   start_stack
   print_summary "$admin_token"
 }
 
 custom_install() {
-  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls
+  local admin_token store_backend pg_dsn runner_node_id runner_secret cp_mode cp_vip cp_dns cp_port pve_real_api pve_api_base pve_token_id pve_token_secret pve_insecure_tls wg_interface gitops_repo_dir gitops_branch gitops_compose_file gitops_env_file gitops_health_url gitops_rollback_on_fail breakglass_enable_cmd breakglass_disable_cmd breakglass_default_min
   read -r -p "Admin Token (leer = automatisch generieren): " admin_token
   if [ -z "$admin_token" ]; then admin_token="$(rand_token)"; fi
 
@@ -193,7 +236,35 @@ custom_install() {
   read -r -p "Proxmox Insecure TLS [true/false] (default: false): " pve_insecure_tls
   if [ -z "$pve_insecure_tls" ]; then pve_insecure_tls="false"; fi
 
-  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls"
+  read -r -p "WireGuard Interface (default: wg0): " wg_interface
+  if [ -z "$wg_interface" ]; then wg_interface="wg0"; fi
+
+  read -r -p "GitOps Repo Pfad (default: $INSTALL_DIR): " gitops_repo_dir
+  if [ -z "$gitops_repo_dir" ]; then gitops_repo_dir="$INSTALL_DIR"; fi
+
+  read -r -p "GitOps Branch (default: main): " gitops_branch
+  if [ -z "$gitops_branch" ]; then gitops_branch="main"; fi
+
+  read -r -p "GitOps Compose File (default: $INSTALL_DIR/infra/docker-compose.yml): " gitops_compose_file
+  if [ -z "$gitops_compose_file" ]; then gitops_compose_file="$INSTALL_DIR/infra/docker-compose.yml"; fi
+
+  read -r -p "GitOps Env File (default: $INFRA_ENV_FILE): " gitops_env_file
+  if [ -z "$gitops_env_file" ]; then gitops_env_file="$INFRA_ENV_FILE"; fi
+
+  read -r -p "GitOps Health URL (default: http://127.0.0.1:8080/healthz): " gitops_health_url
+  if [ -z "$gitops_health_url" ]; then gitops_health_url="http://127.0.0.1:8080/healthz"; fi
+
+  read -r -p "GitOps Rollback bei Fehler [true/false] (default: true): " gitops_rollback_on_fail
+  if [ -z "$gitops_rollback_on_fail" ]; then gitops_rollback_on_fail="true"; fi
+
+  read -r -p "Break-Glass Enable Hook Command (default: $INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh 22 10.13.13.0/24): " breakglass_enable_cmd
+  if [ -z "$breakglass_enable_cmd" ]; then breakglass_enable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-enable.sh 22 10.13.13.0/24"; fi
+  read -r -p "Break-Glass Disable Hook Command (default: $INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24): " breakglass_disable_cmd
+  if [ -z "$breakglass_disable_cmd" ]; then breakglass_disable_cmd="$INSTALL_DIR/infra/ops/breakglass/ssh-breakglass-disable.sh 22 10.13.13.0/24"; fi
+  read -r -p "Break-Glass Default Minuten (default: 60): " breakglass_default_min
+  if [ -z "$breakglass_default_min" ]; then breakglass_default_min="60"; fi
+
+  write_env_file "$admin_token" "$store_backend" "$pg_dsn" "$runner_node_id" "$runner_secret" "$cp_mode" "$cp_vip" "$cp_dns" "$cp_port" "$pve_real_api" "$pve_api_base" "$pve_token_id" "$pve_token_secret" "$pve_insecure_tls" "$wg_interface" "$gitops_repo_dir" "$gitops_branch" "$gitops_compose_file" "$gitops_env_file" "$gitops_health_url" "$gitops_rollback_on_fail" "$breakglass_enable_cmd" "$breakglass_disable_cmd" "$breakglass_default_min"
   start_stack
   print_summary "$admin_token"
 }

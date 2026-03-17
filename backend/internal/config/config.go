@@ -23,6 +23,16 @@ type Config struct {
 	ProxmoxAPITokenID     string
 	ProxmoxAPITokenSecret string
 	ProxmoxInsecureTLS    bool
+	WireGuardInterface    string
+	GitOpsRepoDir         string
+	GitOpsBranch          string
+	GitOpsComposeFile     string
+	GitOpsEnvFile         string
+	GitOpsHealthURL       string
+	GitOpsRollbackOnFail  bool
+	BreakglassEnableCmd   string
+	BreakglassDisableCmd  string
+	BreakglassDefaultMin  int
 }
 
 func Load() Config {
@@ -44,6 +54,16 @@ func Load() Config {
 		ProxmoxAPITokenID:     envOr("PROXMASTER_PROXMOX_API_TOKEN_ID", ""),
 		ProxmoxAPITokenSecret: envOr("PROXMASTER_PROXMOX_API_TOKEN_SECRET", ""),
 		ProxmoxInsecureTLS:    envOr("PROXMASTER_PROXMOX_INSECURE_TLS", "false") == "true",
+		WireGuardInterface:    envOr("PROXMASTER_WIREGUARD_INTERFACE", "wg0"),
+		GitOpsRepoDir:         envOr("PROXMASTER_GITOPS_REPO_DIR", "/opt/proxmaster"),
+		GitOpsBranch:          envOr("PROXMASTER_GITOPS_BRANCH", "main"),
+		GitOpsComposeFile:     envOr("PROXMASTER_GITOPS_COMPOSE_FILE", "/opt/proxmaster/infra/docker-compose.yml"),
+		GitOpsEnvFile:         envOr("PROXMASTER_GITOPS_ENV_FILE", "/opt/proxmaster/infra/.env"),
+		GitOpsHealthURL:       envOr("PROXMASTER_GITOPS_HEALTH_URL", "http://127.0.0.1:8080/healthz"),
+		GitOpsRollbackOnFail:  envOr("PROXMASTER_GITOPS_ROLLBACK_ON_FAIL", "true") == "true",
+		BreakglassEnableCmd:   envOr("PROXMASTER_BREAKGLASS_ENABLE_CMD", ""),
+		BreakglassDisableCmd:  envOr("PROXMASTER_BREAKGLASS_DISABLE_CMD", ""),
+		BreakglassDefaultMin:  envOrInt("PROXMASTER_BREAKGLASS_DEFAULT_MIN", 60),
 	}
 	return cfg
 }

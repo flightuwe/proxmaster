@@ -13,7 +13,12 @@
    - `/healthz`
    - `/cluster/overview`
    - `/controlplane/endpoint`
+   - `/connectivity/status`
+   - `/gitops/status`
+   - `/access/breakglass`
    - `mcp tool: proxmox.connection.test`
+   - `mcp tool: gitops.sync.now`
+   - `mcp tool: ssh.breakglass.enable` (mit approval)
    - hard-block path via `/mcp/call` + `/mcp/approve`
    - `/policy/simulate`
    - `/nodes/heartbeat`

@@ -4,19 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"proxmaster/backend/internal/breakglass"
+	"proxmaster/backend/internal/connectivity"
+	"proxmaster/backend/internal/gitops"
 	"proxmaster/backend/internal/models"
 	"proxmaster/backend/internal/proxmox"
 	"proxmaster/backend/internal/runner"
 )
 
 type Service struct {
-	px     *proxmox.Client
-	runner *runner.Controller
+	px           *proxmox.Client
+	runner       *runner.Controller
+	connectivity *connectivity.Service
+	gitops       *gitops.Service
+	breakglass   *breakglass.Service
 }
 
-func New(px *proxmox.Client, runnerCtrl *runner.Controller) *Service {
-	return &Service{px: px, runner: runnerCtrl}
+func New(px *proxmox.Client, runnerCtrl *runner.Controller, conn *connectivity.Service, gitopsSvc *gitops.Service, breakglassSvc *breakglass.Service) *Service {
+	return &Service{
+		px:           px,
+		runner:       runnerCtrl,
+		connectivity: conn,
+		gitops:       gitopsSvc,
+		breakglass:   breakglassSvc,
+	}
 }
 
 func (s *Service) Execute(ctx context.Context, tool string, params map[string]any) (map[string]any, error) {
@@ -24,8 +37,50 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 	case "cluster.get_state":
 		state := s.px.GetState(ctx)
 		return map[string]any{"state": state}, nil
+	case "connectivity.status":
+		if s.connectivity == nil {
+			return nil, errors.New("connectivity service not configured")
+		}
+		return s.connectivity.Status(ctx), nil
 	case "proxmox.connection.test":
 		return s.px.ConnectionTest(ctx)
+	case "gitops.status":
+		if s.gitops == nil {
+			return nil, errors.New("gitops service not configured")
+		}
+		return s.gitops.Status(), nil
+	case "gitops.sync.now":
+		if s.gitops == nil {
+			return nil, errors.New("gitops service not configured")
+		}
+		actor := stringFrom(params["actor"])
+		return s.gitops.SyncNow(ctx, actor)
+	case "gitops.rollback":
+		if s.gitops == nil {
+			return nil, errors.New("gitops service not configured")
+		}
+		return s.gitops.RollbackLastStable(ctx)
+	case "ssh.breakglass.status":
+		if s.breakglass == nil {
+			return nil, errors.New("breakglass service not configured")
+		}
+		return s.breakglass.Status(ctx), nil
+	case "ssh.breakglass.enable":
+		if s.breakglass == nil {
+			return nil, errors.New("breakglass service not configured")
+		}
+		actor := stringFrom(params["actor"])
+		durationMin := intFrom(params["duration_minutes"], 60)
+		if durationMin < 1 {
+			durationMin = 1
+		}
+		return s.breakglass.Enable(ctx, time.Duration(durationMin)*time.Minute, actor)
+	case "ssh.breakglass.disable":
+		if s.breakglass == nil {
+			return nil, errors.New("breakglass service not configured")
+		}
+		actor := stringFrom(params["actor"])
+		return s.breakglass.Disable(ctx, actor)
 	case "node.set_maintenance":
 		nodeID, _ := params["node_id"].(string)
 		maintenance, _ := params["maintenance"].(bool)

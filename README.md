@@ -26,6 +26,12 @@ Danach führt dich ein Menü:
 `Custom Install` kann jetzt auch direkt die echte Proxmox API anbinden
 (`PROXMASTER_PROXMOX_*` Variablen).
 
+Neu fuer Remote-Cluster-Betrieb:
+- WireGuard Interface Status in API (`/connectivity/status`)
+- GitOps Pull Deploy (`/gitops/status`, `/gitops/sync`, `/gitops/rollback`)
+- SSH Break-Glass Toggle mit Timebox (`/access/breakglass/*`)
+- Ops-Runbooks/Skripte unter `infra/ops/*`
+
 ## Quick start (backend)
 
 ```powershell

@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"proxmaster/backend/internal/api"
+	"proxmaster/backend/internal/breakglass"
 	"proxmaster/backend/internal/config"
+	"proxmaster/backend/internal/connectivity"
 	"proxmaster/backend/internal/controlplane"
+	"proxmaster/backend/internal/gitops"
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/mcp"
 	"proxmaster/backend/internal/orchestrator"
@@ -45,14 +48,24 @@ func main() {
 		}
 	}
 	px := proxmox.NewClient(st, cp, realAPI)
+	connSvc := connectivity.NewService(cfg.WireGuardInterface)
+	gitopsSvc := gitops.NewService(gitops.Config{
+		RepoDir:        cfg.GitOpsRepoDir,
+		Branch:         cfg.GitOpsBranch,
+		ComposeFile:    cfg.GitOpsComposeFile,
+		EnvFile:        cfg.GitOpsEnvFile,
+		HealthURL:      cfg.GitOpsHealthURL,
+		RollbackOnFail: cfg.GitOpsRollbackOnFail,
+	})
+	breakglassSvc := breakglass.NewService(cfg.BreakglassEnableCmd, cfg.BreakglassDisableCmd, cfg.BreakglassDefaultMin)
 	runnerCtrl := runner.NewController()
-	orch := orchestrator.New(px, runnerCtrl)
+	orch := orchestrator.New(px, runnerCtrl, connSvc, gitopsSvc, breakglassSvc)
 	riskEngine := risk.NewEngine()
 	policyGate := policy.NewGate()
 	gateEval := health.NewGateEvaluator(cfg.FailClosed, cfg.RunnerHeartbeatMaxSec)
 	mcpSvc := mcp.NewService(st, riskEngine, policyGate, gateEval, orch)
 
-	srv := api.NewServer(cfg, st, mcpSvc, gateEval, cp)
+	srv := api.NewServer(cfg, st, mcpSvc, gateEval, cp, connSvc, gitopsSvc, breakglassSvc)
 	log.Printf("proxmaster api listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Handler()); err != nil {
 		log.Fatal(err)

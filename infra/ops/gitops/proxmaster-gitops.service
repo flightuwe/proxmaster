@@ -1,0 +1,14 @@
+[Unit]
+Description=Proxmaster GitOps Pull Deploy
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/opt/proxmaster/infra/.env
+ExecStart=/opt/proxmaster/infra/ops/gitops/proxmaster-deploy.sh
+
+[Install]
+WantedBy=multi-user.target
+

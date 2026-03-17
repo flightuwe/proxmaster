@@ -22,7 +22,7 @@ func TestHandleCallHardBlock(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
@@ -48,15 +48,15 @@ func TestHandleCallApproved(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
 	)
 
 	resp, err := svc.HandleCall(context.Background(), models.MCPCallRequest{
-		Tool:       "network.apply",
-		Params:     map[string]any{"name": "vmbr1", "kind": "bridge", "cidr": "10.20.0.0/24"},
-		Actor:      "tester",
-		ApproveNow: true,
-		HardwareMFA: true,
+		Tool:           "network.apply",
+		Params:         map[string]any{"name": "vmbr1", "kind": "bridge", "cidr": "10.20.0.0/24"},
+		Actor:          "tester",
+		ApproveNow:     true,
+		HardwareMFA:    true,
 		SecondApprover: "second-admin",
 	})
 	if err != nil {
@@ -74,14 +74,14 @@ func TestHandleCallIdempotencyKey(t *testing.T) {
 		risk.NewEngine(),
 		policy.NewGate(),
 		health.NewGateEvaluator(true, 120),
-		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController()),
+		orchestrator.New(proxmox.NewClient(st, controlplane.NewManager(controlplane.Config{Mode: controlplane.ModeVIP, InitialNode: "node-1"}), nil), runner.NewController(), nil, nil, nil),
 	)
 
 	req := models.MCPCallRequest{
-		Tool:            "vm.create",
-		Params:          map[string]any{"name": "x", "node_id": "node-2"},
-		Actor:           "tester",
-		IdempotencyKey:  "idem-1",
+		Tool:           "vm.create",
+		Params:         map[string]any{"name": "x", "node_id": "node-2"},
+		Actor:          "tester",
+		IdempotencyKey: "idem-1",
 	}
 	first, err := svc.HandleCall(context.Background(), req)
 	if err != nil {
