@@ -35,6 +35,7 @@ Neu fuer Remote-Cluster-Betrieb:
 - CLI Shortcuts: `proxmaster update`, `proxmaster proof`, `proxmaster status`
 - Superkurz: `pm up`, `pm pf`, `pm st`, `pm lg`, `pm rs`, `pm tk`
 - WireGuard CLI: `pm wg-status`, `pm wg-plan`, `pm wg-apply <client_pubkey> <endpoint>`
+- `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 
 ## Quick start (backend)
 

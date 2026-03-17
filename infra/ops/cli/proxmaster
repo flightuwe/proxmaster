@@ -32,9 +32,36 @@ cmd_update() {
   need_cmd git
   need_cmd docker
   ensure_env
-  git -C "$INSTALL_DIR" fetch --all --prune
+  git config --global --add safe.directory "$INSTALL_DIR" >/dev/null 2>&1 || true
+
+  if [ ! -w "$INSTALL_DIR/.git" ]; then
+    echo "[proxmaster] no write permission for $INSTALL_DIR/.git (run once: sudo chown -R $USER:$USER $INSTALL_DIR)" >&2
+    exit 1
+  fi
+
+  local has_local_changes="false"
+  if ! git -C "$INSTALL_DIR" diff --quiet; then
+    has_local_changes="true"
+  fi
+  if ! git -C "$INSTALL_DIR" diff --cached --quiet; then
+    has_local_changes="true"
+  fi
+  if [ -n "$(git -C "$INSTALL_DIR" ls-files --others --exclude-standard)" ]; then
+    has_local_changes="true"
+  fi
+
+  if [ "$has_local_changes" = "true" ]; then
+    local backup_file
+    backup_file="/tmp/proxmaster-local-changes-$(date +%Y%m%d-%H%M%S).patch"
+    git -C "$INSTALL_DIR" diff >"$backup_file" || true
+    echo "[proxmaster] local changes detected; backup written to $backup_file"
+    git -C "$INSTALL_DIR" reset --hard HEAD
+    git -C "$INSTALL_DIR" clean -fd
+  fi
+
+  git -C "$INSTALL_DIR" fetch origin main --prune
   git -C "$INSTALL_DIR" checkout main
-  git -C "$INSTALL_DIR" pull --ff-only origin main
+  git -C "$INSTALL_DIR" reset --hard origin/main
   if [ -f "$INSTALL_DIR/backend/go.mod" ]; then
     docker run --rm -v "$INSTALL_DIR/backend:/src" -w /src golang:1.22 go mod tidy >/dev/null 2>&1 || true
   fi
