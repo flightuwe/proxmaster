@@ -115,6 +115,23 @@ func NewMemoryStore() *MemoryStore {
 					"lan_cidr":   "10.13.37.1/24",
 				},
 			},
+			"wireguard-server": {
+				Name:          "wireguard-server",
+				Version:       "1.0.0",
+				Description:   "Deploy WireGuard gateway server VM",
+				ProvisionKind: "vm",
+				DefaultCPU:    2,
+				DefaultMemMB:  2048,
+				DefaultDiskGB: 20,
+				AnsibleRoles:  []string{"wireguard-server"},
+				HealthChecks:  []string{"udp:51820", "cmd:wg show"},
+				RollbackSteps: []string{"disable wg-quick@wg0", "restore /etc/wireguard/wg0.conf"},
+				Parameters: map[string]any{
+					"interface":   "wg0",
+					"listen_port": 51820,
+					"cidr":        "10.66.66.1/24",
+				},
+			},
 		},
 		blueprintSpecs: make(map[string]models.ServiceBlueprintSpec),
 		policyMode: models.PolicyModeState{

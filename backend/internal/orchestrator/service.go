@@ -145,6 +145,20 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 		return s.px.PlanBlueprint(ctx, params)
 	case "blueprint.deploy":
 		return s.px.DeployBlueprint(ctx, params)
+	case "service.wireguard.vm.deploy":
+		payload := map[string]any{
+			"name":          "wireguard-server",
+			"node_id":       stringFrom(params["node_id"]),
+			"workload_name": stringFrom(params["workload_name"]),
+			"template_id":   stringFrom(params["template_id"]),
+		}
+		if payload["node_id"] == "" {
+			payload["node_id"] = "node-2"
+		}
+		if payload["workload_name"] == "" {
+			payload["workload_name"] = "wg-server"
+		}
+		return s.px.DeployBlueprint(ctx, payload)
 	case "blueprint.verify":
 		return s.px.VerifyBlueprint(ctx, params)
 	case "blueprint.update":

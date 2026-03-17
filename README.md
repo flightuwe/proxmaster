@@ -40,6 +40,7 @@ Neu fuer Remote-Cluster-Betrieb:
   - `pm state [all|cluster|storage|network|backup|workloads]`
   - `pm blueprint <list|plan|deploy|verify|update|rollback> '<json>'`
   - `pm mode <get|guarded|aggressive [minutes]>`
+  - `pm wg-vm-deploy [node_id] [name] [template_id]`
 - `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 - `pm up` repariert bei Bedarf auch Repo-/Docker-Rechte automatisch via `sudo`
 - `pm up` installiert fehlende WireGuard-Tools automatisch (`wireguard`, `wireguard-tools`)
@@ -129,6 +130,7 @@ Authorization: Bearer <token>
 - Autonomy task queue with retries/priority/dead-letter + timeline (`/autonomy/tasks`, `/jobs/timeline`)
 - Minimal integrated browser UI at `/webui` for state/spec/blueprint/policy actions
 - Blueprint catalog includes `pfsense-gateway` bootstrap flow for test deployments
+- Blueprint catalog includes `wireguard-server` and MCP tool `service.wireguard.vm.deploy`
 
 ## Remaining production hardening
 

@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -56,12 +59,14 @@ func main() {
 			http.Error(w, "invalid signature", http.StatusForbidden)
 			return
 		}
-		resp := map[string]any{
-			"accepted": true,
-			"node_id":  nodeID,
-			"command":  req.Command,
-			"args":     req.Args,
-			"ts":       time.Now().UTC(),
+		resp := executeAllowlisted(req.Command, req.Args)
+		resp["accepted"] = resp["ok"] == true
+		resp["node_id"] = nodeID
+		resp["command"] = req.Command
+		resp["args"] = req.Args
+		resp["ts"] = time.Now().UTC()
+		if ok, _ := resp["ok"].(bool); !ok {
+			w.WriteHeader(http.StatusBadRequest)
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
@@ -158,4 +163,64 @@ func splitCSV(v string) []string {
 		return []string{"node-1"}
 	}
 	return out
+}
+
+func executeAllowlisted(command string, args map[string]any) map[string]any {
+	cmd := strings.TrimSpace(strings.ToLower(command))
+	switch cmd {
+	case "apt_update":
+		return runCommand(300*time.Second, "bash", "-lc", "DEBIAN_FRONTEND=noninteractive apt-get update -y")
+	case "apt_upgrade":
+		return runCommand(1200*time.Second, "bash", "-lc", "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
+	case "node_reboot":
+		return runCommand(10*time.Second, "bash", "-lc", "nohup bash -lc 'sleep 2; reboot' >/dev/null 2>&1 &")
+	case "diagnostics_ping":
+		target, _ := args["target"].(string)
+		if strings.TrimSpace(target) == "" {
+			target = "8.8.8.8"
+		}
+		return runCommand(20*time.Second, "ping", "-c", "2", target)
+	case "service_restart":
+		name, _ := args["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			return map[string]any{"ok": false, "error": "missing service name"}
+		}
+		return runCommand(60*time.Second, "systemctl", "restart", name)
+	case "wireguard_install":
+		return runCommand(600*time.Second, "bash", "-lc", "DEBIAN_FRONTEND=noninteractive apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard wireguard-tools")
+	case "wireguard_status":
+		iface, _ := args["interface"].(string)
+		if strings.TrimSpace(iface) == "" {
+			iface = "wg0"
+		}
+		return runCommand(30*time.Second, "wg", "show", iface)
+	case "shell_script":
+		script, _ := args["script"].(string)
+		if strings.TrimSpace(script) == "" {
+			return map[string]any{"ok": false, "error": "missing script"}
+		}
+		return runCommand(900*time.Second, "bash", "-lc", script)
+	default:
+		return map[string]any{"ok": false, "error": "command is not allowlisted"}
+	}
+}
+
+func runCommand(timeout time.Duration, name string, argv ...string) map[string]any {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, argv...)
+	out, err := cmd.CombinedOutput()
+	result := map[string]any{
+		"ok":      err == nil,
+		"command": append([]string{name}, argv...),
+		"output":  string(out),
+	}
+	if err != nil {
+		result["error"] = err.Error()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			result["exit_code"] = exitErr.ExitCode()
+		}
+	}
+	return result
 }
