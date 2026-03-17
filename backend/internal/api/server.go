@@ -36,6 +36,7 @@ type Server struct {
 func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval *health.GateEvaluator, cp *controlplane.Manager, connSvc *connectivity.Service, gitopsSvc *gitops.Service, bgs *breakglass.Service) *Server {
 	s := &Server{cfg: cfg, store: st, mcpSvc: mcpSvc, gateEval: gateEval, cp: cp, connSvc: connSvc, gitops: gitopsSvc, bgs: bgs}
 	r := http.NewServeMux()
+	r.HandleFunc("/", s.handleIndex)
 	r.HandleFunc("/healthz", s.handleHealth)
 	r.HandleFunc("/auth/login", s.handleLogin)
 	r.HandleFunc("/auth/mfa/verify", s.handleMFAVerify)
@@ -72,6 +73,25 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service": "proxmaster-api",
+		"status":  "ok",
+		"hint":    "API reachable. Use /healthz for liveness and authenticated endpoints for control.",
+		"endpoints": map[string]string{
+			"health":        "/healthz",
+			"overview":      "/cluster/overview",
+			"connectivity":  "/connectivity/status",
+			"wireguard":     "/vpn/wireguard/status",
+			"gitops_status": "/gitops/status",
+		},
+	})
+}
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())

@@ -157,6 +157,29 @@ cmd_token() {
   token
 }
 
+cmd_ip() {
+  need_cmd awk
+  need_cmd sed
+
+  local ips=""
+  if command -v ip >/dev/null 2>&1; then
+    ips="$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ')"
+  fi
+  if [ -z "$ips" ]; then
+    ips="$(hostname -I 2>/dev/null || true)"
+  fi
+  ips="$(echo "$ips" | xargs || true)"
+  if [ -z "$ips" ]; then
+    echo "[proxmaster] no global IPv4 found"
+    return
+  fi
+  echo "IPv4 addresses: $ips"
+  for ipaddr in $ips; do
+    echo "  - http://$ipaddr:8080/"
+    echo "  - http://$ipaddr:8080/healthz"
+  done
+}
+
 api_call() {
   local method="$1"
   local path="$2"
@@ -210,6 +233,7 @@ Commands:
   rs [service]         Alias for restart
   token                Print PROXMASTER_ADMIN_TOKEN
   tk                   Alias for token
+  ip                   Show server IPv4 addresses + test URLs
   wg-status            WireGuard status
   wg-plan              WireGuard plan/template output
   wg-apply             Apply WireGuard config (guarded)
@@ -228,6 +252,7 @@ main() {
     lg) cmd="logs" ;;
     rs) cmd="restart" ;;
     tk) cmd="token" ;;
+    ipa) cmd="ip" ;;
     wgs) cmd="wg-status" ;;
     wgp) cmd="wg-plan" ;;
     wga) cmd="wg-apply" ;;
@@ -240,6 +265,7 @@ main() {
     logs) cmd_logs "$@" ;;
     restart) cmd_restart "$@" ;;
     token) cmd_token "$@" ;;
+    ip) cmd_ip "$@" ;;
     wg-status) cmd_wg_status "$@" ;;
     wg-plan) cmd_wg_plan "$@" ;;
     wg-apply) cmd_wg_apply "$@" ;;
