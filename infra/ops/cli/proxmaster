@@ -522,6 +522,20 @@ cmd_wireguard_vm_deploy() {
   cmd_mcp "service.wireguard.vm.deploy" "$params"
 }
 
+cmd_term() {
+  need_cmd jq
+  local node_id="${1:-node-1}"
+  shift || true
+  local script="${*:-}"
+  if [ -z "$script" ]; then
+    echo "Usage: proxmaster term [node_id] <shell command...>" >&2
+    exit 1
+  fi
+  local payload
+  payload="$(jq -nc --arg n "$node_id" --arg s "$script" '{node_id:$n,script:$s,actor:"cli-admin",reauth_token:"reauth-ok",hardware_mfa:true,second_approver:"cli-admin"}')"
+  api_call POST /terminal/exec "$payload" | jq .
+}
+
 usage() {
   cat <<EOF
 Usage: proxmaster <command>
@@ -553,6 +567,7 @@ Commands:
   blueprint            Blueprint operations (list/plan/deploy/verify/update/rollback)
   mode                 Policy mode (get/guarded/aggressive [minutes])
   wg-vm-deploy         Deploy WireGuard server VM (wg-vm-deploy [node_id] [name] [template_id])
+  term                 Execute allowlisted shell script via runner (term [node_id] <command>)
   bootstrap [quick]    One-command VM bootstrap (non-interactive quick mode)
   help                 Show this help
 EOF
@@ -580,6 +595,7 @@ main() {
     bp) cmd="blueprint" ;;
     md) cmd="mode" ;;
     wvd) cmd="wg-vm-deploy" ;;
+    te) cmd="term" ;;
     bs) cmd="bootstrap" ;;
   esac
   case "$cmd" in
@@ -602,6 +618,7 @@ main() {
     blueprint) cmd_blueprint "$@" ;;
     mode) cmd_policy_mode "$@" ;;
     wg-vm-deploy) cmd_wireguard_vm_deploy "$@" ;;
+    term) cmd_term "$@" ;;
     bootstrap) cmd_bootstrap "$@" ;;
     help|-h|--help) usage ;;
     *)

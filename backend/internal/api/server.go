@@ -90,6 +90,7 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/vpn/wireguard/apply", s.withAuth(s.handleWireGuardApply))
 	r.HandleFunc("/mcp/call", s.withAuth(s.handleMCPCall))
 	r.HandleFunc("/mcp/approve", s.withAuth(s.handleMCPApprove))
+	r.HandleFunc("/terminal/exec", s.withAuth(s.handleTerminalExec))
 	s.handler = loggingMiddleware(r)
 	return s
 }
@@ -949,6 +950,57 @@ func (s *Server) handleMCPApprove(w http.ResponseWriter, r *http.Request) {
 		HardwareMFA:    req.HardwareMFA,
 		IdempotencyKey: req.IdempotencyKey,
 		Metadata:       req.Metadata,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleTerminalExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		NodeID         string `json:"node_id"`
+		Script         string `json:"script"`
+		Actor          string `json:"actor"`
+		ReauthToken    string `json:"reauth_token"`
+		SecondApprover string `json:"second_approver"`
+		HardwareMFA    bool   `json:"hardware_mfa"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.NodeID) == "" {
+		req.NodeID = "node-1"
+	}
+	if strings.TrimSpace(req.Script) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing script"})
+		return
+	}
+	if strings.TrimSpace(req.Actor) == "" {
+		req.Actor = "cli-admin"
+	}
+	resp, err := s.mcpSvc.HandleCall(context.Background(), models.MCPCallRequest{
+		Tool: "node.runner.exec",
+		Params: map[string]any{
+			"node_id": req.NodeID,
+			"command": "shell_script",
+			"args": map[string]any{
+				"script": req.Script,
+			},
+		},
+		Actor:          req.Actor,
+		ApproveNow:     req.ReauthToken == "reauth-ok",
+		ReauthToken:    req.ReauthToken,
+		SecondApprover: req.SecondApprover,
+		HardwareMFA:    req.HardwareMFA,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})

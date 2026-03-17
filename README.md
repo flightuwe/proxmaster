@@ -41,6 +41,7 @@ Neu fuer Remote-Cluster-Betrieb:
   - `pm blueprint <list|plan|deploy|verify|update|rollback> '<json>'`
   - `pm mode <get|guarded|aggressive [minutes]>`
   - `pm wg-vm-deploy [node_id] [name] [template_id]`
+  - `pm term [node_id] '<command>'` (runner-executed, audited)
 - `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 - `pm up` repariert bei Bedarf auch Repo-/Docker-Rechte automatisch via `sudo`
 - `pm up` installiert fehlende WireGuard-Tools automatisch (`wireguard`, `wireguard-tools`)
