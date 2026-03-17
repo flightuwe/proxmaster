@@ -40,6 +40,10 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 	case "cluster.get_state":
 		state := s.px.GetState(ctx)
 		return map[string]any{"state": state}, nil
+	case "state.get.all":
+		state := s.px.GetState(ctx)
+		specs := s.px.DesiredState(ctx)
+		return map[string]any{"state": state, "specs": specs}, nil
 	case "connectivity.status":
 		if s.connectivity == nil {
 			return nil, errors.New("connectivity service not configured")
@@ -117,6 +121,35 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 		vmID, _ := params["vm_id"].(string)
 		targetNode, _ := params["target_node"].(string)
 		return s.px.PlanVMMigration(ctx, vmID, targetNode)
+	case "workload.spec.apply":
+		scope := stringFrom(params["scope"])
+		key := stringFrom(params["key"])
+		desired, _ := params["spec"].(map[string]any)
+		return s.px.ApplySpec(ctx, scope, key, desired)
+	case "workload.spec.explain":
+		scope := stringFrom(params["scope"])
+		key := stringFrom(params["key"])
+		return s.px.ExplainSpec(ctx, scope, key)
+	case "backup.policy.simulate":
+		workloadID := stringFrom(params["workload_id"])
+		return s.px.SimulateBackupPolicy(ctx, workloadID)
+	case "blueprint.list":
+		return s.px.ListBlueprints(ctx)
+	case "blueprint.plan":
+		return s.px.PlanBlueprint(ctx, params)
+	case "blueprint.deploy":
+		return s.px.DeployBlueprint(ctx, params)
+	case "blueprint.verify":
+		return s.px.VerifyBlueprint(ctx, params)
+	case "blueprint.update":
+		return s.px.UpdateBlueprint(ctx, params)
+	case "blueprint.rollback":
+		return s.px.RollbackBlueprint(ctx, params)
+	case "policy.mode.set":
+		mode := stringFrom(params["mode"])
+		actor := stringFrom(params["actor"])
+		duration := intFrom(params["duration_minutes"], 0)
+		return s.px.SetPolicyMode(ctx, mode, actor, duration)
 	case "proxmaster.self_migrate":
 		vmID, _ := params["vm_id"].(string)
 		targetNode, _ := params["target_node"].(string)

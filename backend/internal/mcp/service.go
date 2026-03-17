@@ -73,6 +73,7 @@ func (s *Service) HandleCall(ctx context.Context, req models.MCPCallRequest) (mo
 		gateReason,
 		req.HardwareMFA,
 		strings.TrimSpace(req.SecondApprover),
+		s.store.GetPolicyMode(),
 	)
 
 	job := s.store.CreateJob(models.Job{
@@ -143,6 +144,9 @@ func (s *Service) HandleCall(ctx context.Context, req models.MCPCallRequest) (mo
 
 	resp.Job = job
 	resp.Output = result
+	if dd, ok := result["drift_delta"].(map[string]any); ok {
+		resp.DriftDelta = dd
+	}
 	return resp, nil
 }
 
@@ -153,7 +157,7 @@ func (s *Service) SimulatePolicy(req models.PolicySimulationRequest) models.Poli
 	riskLevel := s.riskEngine.Classify(req.Tool, req.Params)
 	hardBlocked, hardReason := s.riskEngine.HardBlockReason(req.Tool, req.Params, riskLevel)
 	snapshot := s.gateEval.SnapshotFromState(s.store.ClusterState())
-	decision := s.policyGate.Simulate(riskLevel, hardBlocked, hardReason, req.ApproveNow, snapshot)
+	decision := s.policyGate.Simulate(riskLevel, hardBlocked, hardReason, req.ApproveNow, snapshot, s.store.GetPolicyMode())
 	return models.PolicySimulationResponse{
 		RiskLevel:         riskLevel,
 		Decision:          decision.Type,

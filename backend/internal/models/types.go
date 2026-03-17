@@ -34,20 +34,20 @@ const (
 )
 
 type Job struct {
-	ID                string                 `json:"id"`
-	IdempotencyKey    string                 `json:"idempotency_key,omitempty"`
-	Tool              string                 `json:"tool"`
-	Input             map[string]any         `json:"input"`
-	Risk              RiskLevel              `json:"risk"`
-	Decision          DecisionType           `json:"decision"`
-	RequiredApprovals int                    `json:"required_approvals"`
-	RollbackPlanID    string                 `json:"rollback_plan_id,omitempty"`
-	Status            JobStatus              `json:"status"`
-	StatusHistory     []JobStatus            `json:"status_history,omitempty"`
-	Result            map[string]any         `json:"result,omitempty"`
-	Error             string                 `json:"error,omitempty"`
-	CreatedAt         time.Time              `json:"created_at"`
-	UpdatedAt         time.Time              `json:"updated_at"`
+	ID                string         `json:"id"`
+	IdempotencyKey    string         `json:"idempotency_key,omitempty"`
+	Tool              string         `json:"tool"`
+	Input             map[string]any `json:"input"`
+	Risk              RiskLevel      `json:"risk"`
+	Decision          DecisionType   `json:"decision"`
+	RequiredApprovals int            `json:"required_approvals"`
+	RollbackPlanID    string         `json:"rollback_plan_id,omitempty"`
+	Status            JobStatus      `json:"status"`
+	StatusHistory     []JobStatus    `json:"status_history,omitempty"`
+	Result            map[string]any `json:"result,omitempty"`
+	Error             string         `json:"error,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 type AuditEvent struct {
@@ -61,16 +61,16 @@ type AuditEvent struct {
 }
 
 type ClusterState struct {
-	Nodes              []Node              `json:"nodes"`
-	VMs                []VM                `json:"vms"`
-	Pools              []StoragePool       `json:"pools"`
-	Datastores         []Datastore         `json:"datastores"`
-	SnapshotTiers      []SnapshotTier      `json:"snapshot_tiers"`
+	Nodes               []Node              `json:"nodes"`
+	VMs                 []VM                `json:"vms"`
+	Pools               []StoragePool       `json:"pools"`
+	Datastores          []Datastore         `json:"datastores"`
+	SnapshotTiers       []SnapshotTier      `json:"snapshot_tiers"`
 	ReplicationPolicies []ReplicationPolicy `json:"replication_policies"`
-	BackupTargets      []BackupTarget      `json:"backup_targets"`
-	Networks           []NetworkObject     `json:"networks"`
-	HAEnabled          bool                `json:"ha_enabled"`
-	UpdatedAt          time.Time           `json:"updated_at"`
+	BackupTargets       []BackupTarget      `json:"backup_targets"`
+	Networks            []NetworkObject     `json:"networks"`
+	HAEnabled           bool                `json:"ha_enabled"`
+	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
 type Node struct {
@@ -122,14 +122,14 @@ type SnapshotTier struct {
 }
 
 type ReplicationPolicy struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	SourcePool    string `json:"source_pool"`
-	TargetPool    string `json:"target_pool"`
-	Schedule      string `json:"schedule"`
-	Compression   string `json:"compression"`
-	VerifyAfter   bool   `json:"verify_after"`
-	Status        string `json:"status"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	SourcePool  string `json:"source_pool"`
+	TargetPool  string `json:"target_pool"`
+	Schedule    string `json:"schedule"`
+	Compression string `json:"compression"`
+	VerifyAfter bool   `json:"verify_after"`
+	Status      string `json:"status"`
 }
 
 type BackupTarget struct {
@@ -141,39 +141,39 @@ type BackupTarget struct {
 }
 
 type BackupPolicy struct {
-	ID             string    `json:"id"`
-	WorkloadID     string    `json:"workload_id"`
-	WorkloadKind   string    `json:"workload_kind"`
-	Priority       int       `json:"priority"`
-	Override       bool      `json:"override"`
-	Schedule       string    `json:"schedule"`
-	TargetID       string    `json:"target_id"`
-	RPO            string    `json:"rpo"`
-	Retention      string    `json:"retention"`
-	Encryption     bool      `json:"encryption"`
-	Immutability   bool      `json:"immutability"`
-	VerifyRestore  bool      `json:"verify_restore"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	WorkloadID    string    `json:"workload_id"`
+	WorkloadKind  string    `json:"workload_kind"`
+	Priority      int       `json:"priority"`
+	Override      bool      `json:"override"`
+	Schedule      string    `json:"schedule"`
+	TargetID      string    `json:"target_id"`
+	RPO           string    `json:"rpo"`
+	Retention     string    `json:"retention"`
+	Encryption    bool      `json:"encryption"`
+	Immutability  bool      `json:"immutability"`
+	VerifyRestore bool      `json:"verify_restore"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type BackupDecisionLog struct {
-	ID          string    `json:"id"`
-	WorkloadID  string    `json:"workload_id"`
-	PolicyID    string    `json:"policy_id"`
-	Reason      string    `json:"reason"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	WorkloadID string    `json:"workload_id"`
+	PolicyID   string    `json:"policy_id"`
+	Reason     string    `json:"reason"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type StorageRebuildPlan struct {
-	ID                 string    `json:"id"`
-	PoolNames          []string  `json:"pool_names"`
-	AffectedWorkloads  []string  `json:"affected_workloads"`
-	EstimatedDowntime  string    `json:"estimated_downtime"`
-	CanaryPool         string    `json:"canary_pool"`
-	GuardrailSummary   string    `json:"guardrail_summary"`
-	RollbackSteps      []string  `json:"rollback_steps"`
-	DryRunPassed       bool      `json:"dry_run_passed"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	PoolNames         []string  `json:"pool_names"`
+	AffectedWorkloads []string  `json:"affected_workloads"`
+	EstimatedDowntime string    `json:"estimated_downtime"`
+	CanaryPool        string    `json:"canary_pool"`
+	GuardrailSummary  string    `json:"guardrail_summary"`
+	RollbackSteps     []string  `json:"rollback_steps"`
+	DryRunPassed      bool      `json:"dry_run_passed"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type RestorePlan struct {
@@ -193,15 +193,15 @@ type NetworkObject struct {
 }
 
 type MCPCallRequest struct {
-	Tool            string                 `json:"tool"`
-	Params          map[string]any         `json:"params"`
-	Actor           string                 `json:"actor"`
-	ApproveNow      bool                   `json:"approve_now"`
-	IdempotencyKey  string                 `json:"idempotency_key"`
-	ReauthToken     string                 `json:"reauth_token"`
-	SecondApprover  string                 `json:"second_approver"`
-	HardwareMFA     bool                   `json:"hardware_mfa"`
-	Metadata        map[string]any         `json:"metadata"`
+	Tool           string         `json:"tool"`
+	Params         map[string]any `json:"params"`
+	Actor          string         `json:"actor"`
+	ApproveNow     bool           `json:"approve_now"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	ReauthToken    string         `json:"reauth_token"`
+	SecondApprover string         `json:"second_approver"`
+	HardwareMFA    bool           `json:"hardware_mfa"`
+	Metadata       map[string]any `json:"metadata"`
 }
 
 type MCPCallResponse struct {
@@ -215,6 +215,7 @@ type MCPCallResponse struct {
 	NeedsApprove      bool           `json:"needs_approval"`
 	AuditEvent        AuditEvent     `json:"audit_event"`
 	Output            map[string]any `json:"output,omitempty"`
+	DriftDelta        map[string]any `json:"drift_delta,omitempty"`
 }
 
 type PolicySimulationRequest struct {
@@ -250,16 +251,116 @@ const (
 )
 
 type AgentTask struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Payload     map[string]any         `json:"payload,omitempty"`
-	Status      AgentTaskStatus        `json:"status"`
-	RequestedBy string                 `json:"requested_by"`
-	Result      map[string]any         `json:"result,omitempty"`
-	Error       string                 `json:"error,omitempty"`
-	Attempts    int                    `json:"attempts"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
-	StartedAt   *time.Time             `json:"started_at,omitempty"`
-	FinishedAt  *time.Time             `json:"finished_at,omitempty"`
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Payload     map[string]any  `json:"payload,omitempty"`
+	Status      AgentTaskStatus `json:"status"`
+	RequestedBy string          `json:"requested_by"`
+	Priority    int             `json:"priority"`
+	MaxAttempts int             `json:"max_attempts"`
+	DeadLetter  bool            `json:"dead_letter"`
+	Result      map[string]any  `json:"result,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	Attempts    int             `json:"attempts"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	StartedAt   *time.Time      `json:"started_at,omitempty"`
+	FinishedAt  *time.Time      `json:"finished_at,omitempty"`
+}
+
+type DriftStatus string
+
+const (
+	DriftInSync  DriftStatus = "IN_SYNC"
+	DriftPending DriftStatus = "PENDING"
+	DriftDrifted DriftStatus = "DRIFTED"
+	DriftError   DriftStatus = "ERROR"
+)
+
+type ResourceSpec struct {
+	Desired            map[string]any `json:"desired"`
+	Observed           map[string]any `json:"observed"`
+	DriftStatus        DriftStatus    `json:"drift_status"`
+	LastReconcileJobID string         `json:"last_reconcile_job_id,omitempty"`
+	SpecVersion        int            `json:"spec_version"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
+type ClusterSpec struct {
+	HAEnabled bool `json:"ha_enabled"`
+}
+
+type NodeSpec struct {
+	NodeID      string `json:"node_id"`
+	Maintenance bool   `json:"maintenance"`
+}
+
+type WorkloadSpec struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"`
+	NodeID       string            `json:"node_id"`
+	CPU          int               `json:"cpu"`
+	MemoryMB     int               `json:"memory_mb"`
+	DiskGB       int               `json:"disk_gb"`
+	DesiredPower string            `json:"desired_power"`
+	TemplateID   string            `json:"template_id,omitempty"`
+	CloudInit    map[string]string `json:"cloud_init,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+}
+
+type StorageSpec struct {
+	Pools []StoragePool `json:"pools"`
+}
+
+type NetworkSpec struct {
+	Networks []NetworkObject `json:"networks"`
+}
+
+type BackupSpec struct {
+	Policies []BackupPolicy `json:"policies"`
+}
+
+type ServiceBlueprintSpec struct {
+	Name       string         `json:"name"`
+	Version    string         `json:"version"`
+	Workload   WorkloadSpec   `json:"workload"`
+	Parameters map[string]any `json:"parameters,omitempty"`
+}
+
+type DesiredStateBundle struct {
+	Cluster    ResourceSpec `json:"cluster"`
+	Storage    ResourceSpec `json:"storage"`
+	Network    ResourceSpec `json:"network"`
+	Backup     ResourceSpec `json:"backup"`
+	Workloads  ResourceSpec `json:"workloads"`
+	Blueprints ResourceSpec `json:"blueprints"`
+}
+
+type BlueprintDefinition struct {
+	Name          string         `json:"name"`
+	Version       string         `json:"version"`
+	Description   string         `json:"description"`
+	ProvisionKind string         `json:"provision_kind"`
+	DefaultCPU    int            `json:"default_cpu"`
+	DefaultMemMB  int            `json:"default_memory_mb"`
+	DefaultDiskGB int            `json:"default_disk_gb"`
+	AnsibleRoles  []string       `json:"ansible_roles"`
+	HealthChecks  []string       `json:"health_checks"`
+	RollbackSteps []string       `json:"rollback_steps"`
+	Parameters    map[string]any `json:"parameters"`
+}
+
+type PolicyMode string
+
+const (
+	PolicyModeGuardedSRE PolicyMode = "GUARDED_SRE"
+	PolicyModeAggressive PolicyMode = "AGGRESSIVE_AUTO"
+)
+
+type PolicyModeState struct {
+	Mode            PolicyMode `json:"mode"`
+	AggressiveUntil time.Time  `json:"aggressive_until,omitempty"`
+	LastChangedBy   string     `json:"last_changed_by,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }

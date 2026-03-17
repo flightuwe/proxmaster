@@ -9,11 +9,12 @@ import (
 
 func TestGateEvaluate(t *testing.T) {
 	g := NewGate()
-	allow := g.Evaluate(models.RiskMedium, false, "", false, true, "", false, "")
+	mode := models.PolicyModeState{Mode: models.PolicyModeGuardedSRE}
+	allow := g.Evaluate(models.RiskMedium, false, "", false, true, "", false, "", mode)
 	if !allow.Allow {
 		t.Fatal("expected medium risk to be allowed")
 	}
-	blocked := g.Evaluate(models.RiskHigh, true, "need approval", false, true, "", false, "")
+	blocked := g.Evaluate(models.RiskHigh, true, "need approval", false, true, "", false, "", mode)
 	if blocked.Allow || !blocked.NeedsReview {
 		t.Fatal("expected hard block to require review")
 	}
@@ -26,7 +27,7 @@ func TestSimulateFailClosed(t *testing.T) {
 		RunnerHealthy: false,
 		OnlineNodes:   1,
 		TotalNodes:    4,
-	})
+	}, models.PolicyModeState{Mode: models.PolicyModeGuardedSRE})
 	if d.Allow {
 		t.Fatal("expected fail-closed decision")
 	}

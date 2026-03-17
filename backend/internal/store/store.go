@@ -1,6 +1,10 @@
 package store
 
-import "proxmaster/backend/internal/models"
+import (
+	"time"
+
+	"proxmaster/backend/internal/models"
+)
 
 type Store interface {
 	CreateJob(job models.Job) models.Job
@@ -39,4 +43,15 @@ type Store interface {
 	GetAgentTask(id string) (models.AgentTask, bool)
 	ClaimNextAgentTask(worker string) (models.AgentTask, bool)
 	CompleteAgentTask(id string, result map[string]any, errMsg string) (models.AgentTask, bool)
+	UpsertSpec(scope string, key string, desired map[string]any) models.ResourceSpec
+	GetSpec(scope string, key string) (models.ResourceSpec, bool)
+	ListSpecs(scope string) map[string]models.ResourceSpec
+	SetSpecObserved(scope string, key string, observed map[string]any, drift models.DriftStatus, reconcileJobID string) (models.ResourceSpec, bool)
+	DesiredStateBundle() models.DesiredStateBundle
+	ListBlueprints() []models.BlueprintDefinition
+	GetBlueprint(name string) (models.BlueprintDefinition, bool)
+	UpsertBlueprint(spec models.ServiceBlueprintSpec) models.ServiceBlueprintSpec
+	ListBlueprintSpecs() []models.ServiceBlueprintSpec
+	GetPolicyMode() models.PolicyModeState
+	SetPolicyMode(mode models.PolicyMode, actor string, duration time.Duration) models.PolicyModeState
 }

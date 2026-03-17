@@ -35,6 +35,11 @@ Neu fuer Remote-Cluster-Betrieb:
 - CLI Shortcuts: `proxmaster update`, `proxmaster proof`, `proxmaster status`
 - Superkurz: `pm up`, `pm pf`, `pm st`, `pm lg`, `pm rs`, `pm tk`
 - WireGuard CLI: `pm wg-status`, `pm wg-plan`, `pm wg-apply <client_pubkey> <endpoint>`
+- Declarative control CLI:
+  - `pm spec-put <scope> [key] '<json>'`
+  - `pm state [all|cluster|storage|network|backup|workloads]`
+  - `pm blueprint <list|plan|deploy|verify|update|rollback> '<json>'`
+  - `pm mode <get|guarded|aggressive [minutes]>`
 - `pm up` auto-heals local git drift (backs up diff to `/tmp/*.patch`, then syncs hard to `origin/main`)
 - `pm up` repariert bei Bedarf auch Repo-/Docker-Rechte automatisch via `sudo`
 - `pm up` installiert fehlende WireGuard-Tools automatisch (`wireguard`, `wireguard-tools`)
@@ -118,6 +123,10 @@ Authorization: Bearer <token>
 - Storage control plane for mixed pools (`ZFS + Ceph + NFS/SMB`)
 - Rebuild-all-pools planning/execution hooks with guarded approvals
 - Per-workload backup policies and restore plan flows for VM/LXC
+- Declarative spec APIs (`/spec/*`) + observed state APIs (`/state/*`)
+- Blueprint catalog + deploy/verify/update/rollback flows (`/blueprints/*`)
+- Policy mode switching (`/policy/mode`) with time-boxed aggressive auto mode
+- Autonomy task queue with retries/priority/dead-letter + timeline (`/autonomy/tasks`, `/jobs/timeline`)
 
 ## Remaining production hardening
 

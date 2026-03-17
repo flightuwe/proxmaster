@@ -82,6 +82,9 @@ func (s *PostgresStore) initSchema(ctx context.Context) error {
 			payload_json JSONB NOT NULL,
 			status TEXT NOT NULL,
 			requested_by TEXT NOT NULL,
+			priority INT NOT NULL DEFAULT 50,
+			max_attempts INT NOT NULL DEFAULT 3,
+			dead_letter BOOL NOT NULL DEFAULT FALSE,
 			result_json JSONB,
 			error TEXT,
 			attempts INT NOT NULL,
@@ -90,6 +93,33 @@ func (s *PostgresStore) initSchema(ctx context.Context) error {
 			started_at TIMESTAMPTZ,
 			finished_at TIMESTAMPTZ
 		)`,
+		`CREATE TABLE IF NOT EXISTS specs (
+			scope TEXT NOT NULL,
+			spec_key TEXT NOT NULL,
+			desired_json JSONB NOT NULL,
+			observed_json JSONB NOT NULL,
+			drift_status TEXT NOT NULL,
+			last_reconcile_job_id TEXT,
+			spec_version INT NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY (scope, spec_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS policy_mode (
+			id SMALLINT PRIMARY KEY,
+			mode TEXT NOT NULL,
+			aggressive_until TIMESTAMPTZ,
+			last_changed_by TEXT,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS blueprint_specs (
+			name TEXT PRIMARY KEY,
+			version TEXT NOT NULL,
+			spec_json JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 50`,
+		`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS max_attempts INT NOT NULL DEFAULT 3`,
+		`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS dead_letter BOOL NOT NULL DEFAULT FALSE`,
 	}
 	for _, q := range queries {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -156,24 +186,76 @@ func (s *PostgresStore) persistAgentTask(ctx context.Context, t models.AgentTask
 	resultJSON, _ := json.Marshal(t.Result)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO agent_tasks (
-			id, type, payload_json, status, requested_by, result_json, error, attempts,
+			id, type, payload_json, status, requested_by, priority, max_attempts, dead_letter, result_json, error, attempts,
 			created_at, updated_at, started_at, finished_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (id) DO UPDATE SET
 			type=EXCLUDED.type,
 			payload_json=EXCLUDED.payload_json,
 			status=EXCLUDED.status,
 			requested_by=EXCLUDED.requested_by,
+			priority=EXCLUDED.priority,
+			max_attempts=EXCLUDED.max_attempts,
+			dead_letter=EXCLUDED.dead_letter,
 			result_json=EXCLUDED.result_json,
 			error=EXCLUDED.error,
 			attempts=EXCLUDED.attempts,
 			updated_at=EXCLUDED.updated_at,
 			started_at=EXCLUDED.started_at,
 			finished_at=EXCLUDED.finished_at
-	`, t.ID, t.Type, payloadJSON, string(t.Status), t.RequestedBy, nullJSON(resultJSON), nullable(t.Error), t.Attempts,
+	`, t.ID, t.Type, payloadJSON, string(t.Status), t.RequestedBy, t.Priority, t.MaxAttempts, t.DeadLetter, nullJSON(resultJSON), nullable(t.Error), t.Attempts,
 		t.CreatedAt, t.UpdatedAt, t.StartedAt, t.FinishedAt)
 	if err != nil {
 		log.Printf("warn: failed to persist task %s: %v", t.ID, err)
+	}
+}
+
+func (s *PostgresStore) persistSpec(ctx context.Context, scope, key string, spec models.ResourceSpec) {
+	desiredJSON, _ := json.Marshal(spec.Desired)
+	observedJSON, _ := json.Marshal(spec.Observed)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO specs (scope, spec_key, desired_json, observed_json, drift_status, last_reconcile_job_id, spec_version, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT (scope, spec_key) DO UPDATE SET
+			desired_json=EXCLUDED.desired_json,
+			observed_json=EXCLUDED.observed_json,
+			drift_status=EXCLUDED.drift_status,
+			last_reconcile_job_id=EXCLUDED.last_reconcile_job_id,
+			spec_version=EXCLUDED.spec_version,
+			updated_at=EXCLUDED.updated_at
+	`, scope, key, desiredJSON, observedJSON, string(spec.DriftStatus), nullable(spec.LastReconcileJobID), spec.SpecVersion, spec.UpdatedAt)
+	if err != nil {
+		log.Printf("warn: failed to persist spec %s/%s: %v", scope, key, err)
+	}
+}
+
+func (s *PostgresStore) persistPolicyMode(ctx context.Context, st models.PolicyModeState) {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO policy_mode (id, mode, aggressive_until, last_changed_by, updated_at)
+		VALUES (1,$1,$2,$3,$4)
+		ON CONFLICT (id) DO UPDATE SET
+			mode=EXCLUDED.mode,
+			aggressive_until=EXCLUDED.aggressive_until,
+			last_changed_by=EXCLUDED.last_changed_by,
+			updated_at=EXCLUDED.updated_at
+	`, string(st.Mode), nullableTime(st.AggressiveUntil), nullable(st.LastChangedBy), st.UpdatedAt)
+	if err != nil {
+		log.Printf("warn: failed to persist policy mode: %v", err)
+	}
+}
+
+func (s *PostgresStore) persistBlueprintSpec(ctx context.Context, spec models.ServiceBlueprintSpec) {
+	raw, _ := json.Marshal(spec)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO blueprint_specs (name, version, spec_json, updated_at)
+		VALUES ($1,$2,$3,$4)
+		ON CONFLICT (name) DO UPDATE SET
+			version=EXCLUDED.version,
+			spec_json=EXCLUDED.spec_json,
+			updated_at=EXCLUDED.updated_at
+	`, spec.Name, spec.Version, raw, time.Now().UTC())
+	if err != nil {
+		log.Printf("warn: failed to persist blueprint spec %s: %v", spec.Name, err)
 	}
 }
 
@@ -314,6 +396,60 @@ func (s *PostgresStore) CompleteAgentTask(id string, result map[string]any, errM
 	return task, ok
 }
 
+func (s *PostgresStore) UpsertSpec(scope string, key string, desired map[string]any) models.ResourceSpec {
+	spec := s.mem.UpsertSpec(scope, key, desired)
+	s.persistSpec(context.Background(), scope, key, spec)
+	return spec
+}
+
+func (s *PostgresStore) GetSpec(scope string, key string) (models.ResourceSpec, bool) {
+	return s.mem.GetSpec(scope, key)
+}
+
+func (s *PostgresStore) ListSpecs(scope string) map[string]models.ResourceSpec {
+	return s.mem.ListSpecs(scope)
+}
+
+func (s *PostgresStore) SetSpecObserved(scope string, key string, observed map[string]any, drift models.DriftStatus, reconcileJobID string) (models.ResourceSpec, bool) {
+	spec, ok := s.mem.SetSpecObserved(scope, key, observed, drift, reconcileJobID)
+	if ok {
+		s.persistSpec(context.Background(), scope, key, spec)
+	}
+	return spec, ok
+}
+
+func (s *PostgresStore) DesiredStateBundle() models.DesiredStateBundle {
+	return s.mem.DesiredStateBundle()
+}
+
+func (s *PostgresStore) ListBlueprints() []models.BlueprintDefinition {
+	return s.mem.ListBlueprints()
+}
+
+func (s *PostgresStore) GetBlueprint(name string) (models.BlueprintDefinition, bool) {
+	return s.mem.GetBlueprint(name)
+}
+
+func (s *PostgresStore) UpsertBlueprint(spec models.ServiceBlueprintSpec) models.ServiceBlueprintSpec {
+	out := s.mem.UpsertBlueprint(spec)
+	s.persistBlueprintSpec(context.Background(), out)
+	return out
+}
+
+func (s *PostgresStore) ListBlueprintSpecs() []models.ServiceBlueprintSpec {
+	return s.mem.ListBlueprintSpecs()
+}
+
+func (s *PostgresStore) GetPolicyMode() models.PolicyModeState {
+	return s.mem.GetPolicyMode()
+}
+
+func (s *PostgresStore) SetPolicyMode(mode models.PolicyMode, actor string, duration time.Duration) models.PolicyModeState {
+	st := s.mem.SetPolicyMode(mode, actor, duration)
+	s.persistPolicyMode(context.Background(), st)
+	return st
+}
+
 func nullable(sv string) any {
 	if sv == "" {
 		return nil
@@ -326,4 +462,11 @@ func nullJSON(b []byte) any {
 		return nil
 	}
 	return b
+}
+
+func nullableTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }

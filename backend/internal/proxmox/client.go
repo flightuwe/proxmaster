@@ -93,6 +93,10 @@ func (c *Client) GetState(ctx context.Context) models.ClusterState {
 	return c.store.ClusterState()
 }
 
+func (c *Client) DesiredState(_ context.Context) models.DesiredStateBundle {
+	return c.store.DesiredStateBundle()
+}
+
 func (c *Client) SetNodeMaintenance(_ context.Context, nodeID string, maintenance bool) (map[string]any, error) {
 	ok := c.store.SetNodeMaintenance(nodeID, maintenance)
 	if !ok {
@@ -471,4 +475,233 @@ func (c *Client) ListBackupTargets(_ context.Context) (map[string]any, error) {
 		"changed": false,
 		"targets": c.store.ListBackupTargets(),
 	}, nil
+}
+
+func (c *Client) ApplySpec(_ context.Context, scope, key string, desired map[string]any) (map[string]any, error) {
+	if scope == "" {
+		return nil, errors.New("missing scope")
+	}
+	if key == "" {
+		key = "default"
+	}
+	spec := c.store.UpsertSpec(scope, key, desired)
+	c.store.CreateAgentTask(models.AgentTask{
+		Type:        "spec.reconcile",
+		Payload:     map[string]any{"scope": scope, "key": key},
+		RequestedBy: "spec-controller",
+		Priority:    80,
+		MaxAttempts: 3,
+	})
+	return map[string]any{
+		"changed": true,
+		"scope":   scope,
+		"key":     key,
+		"spec":    spec,
+		"drift_delta": map[string]any{
+			"status": "reconcile_queued",
+		},
+	}, nil
+}
+
+func (c *Client) ExplainSpec(_ context.Context, scope, key string) (map[string]any, error) {
+	if scope == "" {
+		scope = "workloads"
+	}
+	if key == "" {
+		key = "default"
+	}
+	spec, ok := c.store.GetSpec(scope, key)
+	if !ok {
+		return nil, errors.New("spec not found")
+	}
+	return map[string]any{
+		"changed": false,
+		"scope":   scope,
+		"key":     key,
+		"spec":    spec,
+		"drift_delta": map[string]any{
+			"drift_status": spec.DriftStatus,
+		},
+	}, nil
+}
+
+func (c *Client) SimulateBackupPolicy(_ context.Context, workloadID string) (map[string]any, error) {
+	policy, decision, ok := c.store.ExplainBackupPolicy(workloadID)
+	if !ok {
+		return map[string]any{
+			"changed":        false,
+			"workload_id":    workloadID,
+			"selected":       false,
+			"recommendation": "create workload specific policy",
+		}, nil
+	}
+	return map[string]any{
+		"changed":      false,
+		"workload_id":  workloadID,
+		"selected":     true,
+		"policy":       policy,
+		"decision_log": decision,
+	}, nil
+}
+
+func (c *Client) ListBlueprints(_ context.Context) (map[string]any, error) {
+	return map[string]any{
+		"changed":        false,
+		"catalog":        c.store.ListBlueprints(),
+		"deployed_specs": c.store.ListBlueprintSpecs(),
+	}, nil
+}
+
+func (c *Client) PlanBlueprint(_ context.Context, params map[string]any) (map[string]any, error) {
+	name := stringFrom(params["name"])
+	if name == "" {
+		return nil, errors.New("missing blueprint name")
+	}
+	bp, ok := c.store.GetBlueprint(name)
+	if !ok {
+		return nil, errors.New("blueprint not found")
+	}
+	nodeID := stringFrom(params["node_id"])
+	if nodeID == "" {
+		nodeID = "node-1"
+	}
+	return map[string]any{
+		"changed": false,
+		"plan": map[string]any{
+			"blueprint":      bp,
+			"target_node":    nodeID,
+			"provision_kind": bp.ProvisionKind,
+			"steps":          []string{"provision workload via template+cloud-init", "run ansible roles", "health verify", "bind backup policy"},
+			"rollback":       bp.RollbackSteps,
+		},
+	}, nil
+}
+
+func (c *Client) DeployBlueprint(ctx context.Context, params map[string]any) (map[string]any, error) {
+	name := stringFrom(params["name"])
+	if name == "" {
+		return nil, errors.New("missing blueprint name")
+	}
+	bp, ok := c.store.GetBlueprint(name)
+	if !ok {
+		return nil, errors.New("blueprint not found")
+	}
+	nodeID := stringFrom(params["node_id"])
+	if nodeID == "" {
+		nodeID = "node-1"
+	}
+	workloadName := stringFrom(params["workload_name"])
+	if workloadName == "" {
+		workloadName = "svc-" + name
+	}
+	var created map[string]any
+	var err error
+	if bp.ProvisionKind == "lxc" {
+		created, err = c.CreateLXC(ctx, workloadName, nodeID, bp.DefaultCPU, bp.DefaultMemMB, bp.DefaultDiskGB)
+	} else {
+		created, err = c.CreateVM(ctx, workloadName, nodeID, bp.DefaultCPU, bp.DefaultMemMB, bp.DefaultDiskGB)
+	}
+	if err != nil {
+		return nil, err
+	}
+	createdID := ""
+	if vmObj, ok := created["vm"].(models.VM); ok {
+		createdID = vmObj.ID
+	}
+	if lxcObj, ok := created["lxc"].(models.VM); ok {
+		createdID = lxcObj.ID
+	}
+	spec := c.store.UpsertBlueprint(models.ServiceBlueprintSpec{
+		Name:    name,
+		Version: bp.Version,
+		Workload: models.WorkloadSpec{
+			ID:           createdID,
+			Name:         workloadName,
+			Kind:         bp.ProvisionKind,
+			NodeID:       nodeID,
+			CPU:          bp.DefaultCPU,
+			MemoryMB:     bp.DefaultMemMB,
+			DiskGB:       bp.DefaultDiskGB,
+			DesiredPower: "running",
+		},
+		Parameters: params,
+	})
+	return map[string]any{
+		"changed":        true,
+		"blueprint":      spec,
+		"provision":      created,
+		"ansible_status": "queued",
+		"health_status":  "pending",
+		"drift_delta":    map[string]any{"blueprint": name, "status": "deployed"},
+	}, nil
+}
+
+func (c *Client) VerifyBlueprint(_ context.Context, params map[string]any) (map[string]any, error) {
+	name := stringFrom(params["name"])
+	if name == "" {
+		return nil, errors.New("missing blueprint name")
+	}
+	bp, ok := c.store.GetBlueprint(name)
+	if !ok {
+		return nil, errors.New("blueprint not found")
+	}
+	return map[string]any{
+		"changed": false,
+		"name":    name,
+		"checks":  bp.HealthChecks,
+		"status":  "healthy",
+	}, nil
+}
+
+func (c *Client) UpdateBlueprint(ctx context.Context, params map[string]any) (map[string]any, error) {
+	plan, err := c.PlanBlueprint(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"changed": true,
+		"status":  "update_started",
+		"plan":    plan["plan"],
+	}, nil
+}
+
+func (c *Client) RollbackBlueprint(_ context.Context, params map[string]any) (map[string]any, error) {
+	name := stringFrom(params["name"])
+	if name == "" {
+		return nil, errors.New("missing blueprint name")
+	}
+	bp, ok := c.store.GetBlueprint(name)
+	if !ok {
+		return nil, errors.New("blueprint not found")
+	}
+	return map[string]any{
+		"changed": true,
+		"name":    name,
+		"status":  "rollback_started",
+		"steps":   bp.RollbackSteps,
+	}, nil
+}
+
+func (c *Client) SetPolicyMode(_ context.Context, modeRaw, actor string, durationMin int) (map[string]any, error) {
+	mode := models.PolicyModeGuardedSRE
+	if modeRaw == "AGGRESSIVE_AUTO" || modeRaw == "aggressive" || modeRaw == "aggressive_auto" {
+		mode = models.PolicyModeAggressive
+	}
+	if durationMin < 0 {
+		durationMin = 0
+	}
+	st := c.store.SetPolicyMode(mode, actor, time.Duration(durationMin)*time.Minute)
+	return map[string]any{
+		"changed":      true,
+		"policy_mode":  st,
+		"aggressive":   st.Mode == models.PolicyModeAggressive,
+		"auto_expires": st.AggressiveUntil,
+	}, nil
+}
+
+func stringFrom(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

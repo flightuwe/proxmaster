@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,10 @@ type MemoryStore struct {
 	rebuildPlans   map[string]models.StorageRebuildPlan
 	restorePlans   map[string]models.RestorePlan
 	agentTasks     map[string]models.AgentTask
+	specs          map[string]map[string]models.ResourceSpec
+	blueprints     map[string]models.BlueprintDefinition
+	blueprintSpecs map[string]models.ServiceBlueprintSpec
+	policyMode     models.PolicyModeState
 	seq            uint64
 	vmIDSeq        uint64
 	rollbackIDSeq  uint64
@@ -45,6 +50,60 @@ func NewMemoryStore() *MemoryStore {
 		rebuildPlans: make(map[string]models.StorageRebuildPlan),
 		restorePlans: make(map[string]models.RestorePlan),
 		agentTasks:   make(map[string]models.AgentTask),
+		specs: map[string]map[string]models.ResourceSpec{
+			"cluster":   {},
+			"workloads": {},
+			"storage":   {},
+			"network":   {},
+			"backup":    {},
+			"blueprint": {},
+		},
+		blueprints: map[string]models.BlueprintDefinition{
+			"dhcp-server": {
+				Name:          "dhcp-server",
+				Version:       "1.0.0",
+				Description:   "Deploy Kea DHCP in dedicated VM",
+				ProvisionKind: "vm",
+				DefaultCPU:    2,
+				DefaultMemMB:  2048,
+				DefaultDiskGB: 20,
+				AnsibleRoles:  []string{"base-hardening", "kea-dhcp4"},
+				HealthChecks:  []string{"systemd:kea-dhcp4-server", "udp:67"},
+				RollbackSteps: []string{"restore previous config", "restart kea service"},
+				Parameters:    map[string]any{"subnet": "10.0.10.0/24", "gateway": "10.0.10.1"},
+			},
+			"dns-resolver": {
+				Name:          "dns-resolver",
+				Version:       "1.0.0",
+				Description:   "Deploy CoreDNS in dedicated VM or LXC",
+				ProvisionKind: "lxc",
+				DefaultCPU:    2,
+				DefaultMemMB:  1024,
+				DefaultDiskGB: 8,
+				AnsibleRoles:  []string{"base-hardening", "coredns"},
+				HealthChecks:  []string{"tcp:53", "udp:53"},
+				RollbackSteps: []string{"rollback Corefile", "restart coredns"},
+				Parameters:    map[string]any{"zone": "internal"},
+			},
+			"docker-host": {
+				Name:          "docker-host",
+				Version:       "1.0.0",
+				Description:   "Deploy Docker host VM with monitoring/backup baseline",
+				ProvisionKind: "vm",
+				DefaultCPU:    4,
+				DefaultMemMB:  8192,
+				DefaultDiskGB: 80,
+				AnsibleRoles:  []string{"base-hardening", "docker-engine", "node-exporter"},
+				HealthChecks:  []string{"systemd:docker", "tcp:2375"},
+				RollbackSteps: []string{"disable new stack", "restore previous compose state"},
+				Parameters:    map[string]any{"docker_data_pool": "zfs-fast"},
+			},
+		},
+		blueprintSpecs: make(map[string]models.ServiceBlueprintSpec),
+		policyMode: models.PolicyModeState{
+			Mode:      models.PolicyModeGuardedSRE,
+			UpdatedAt: now,
+		},
 		state: models.ClusterState{
 			Nodes: []models.Node{
 				{ID: "node-1", Name: "pve-node-1", Status: "online", Maintenance: false, LastHeartbeat: now, RunnerHealthy: true},
@@ -595,6 +654,12 @@ func (s *MemoryStore) CreateAgentTask(task models.AgentTask) models.AgentTask {
 	if task.RequestedBy == "" {
 		task.RequestedBy = "android-admin"
 	}
+	if task.Priority == 0 {
+		task.Priority = 50
+	}
+	if task.MaxAttempts == 0 {
+		task.MaxAttempts = 3
+	}
 	task.CreatedAt = now
 	task.UpdatedAt = now
 	s.mu.Lock()
@@ -630,7 +695,7 @@ func (s *MemoryStore) ClaimNextAgentTask(_ string) (models.AgentTask, bool) {
 		if t.Status != models.AgentTaskQueued {
 			continue
 		}
-		if !found || t.CreatedAt.Before(picked.CreatedAt) {
+		if !found || t.Priority > picked.Priority || (t.Priority == picked.Priority && t.CreatedAt.Before(picked.CreatedAt)) {
 			picked = t
 			found = true
 		}
@@ -659,6 +724,9 @@ func (s *MemoryStore) CompleteAgentTask(id string, result map[string]any, errMsg
 	task.FinishedAt = &now
 	task.Result = result
 	task.Error = errMsg
+	if strings.HasPrefix(task.Type, "deadletter.") {
+		task.DeadLetter = true
+	}
 	if errMsg != "" {
 		task.Status = models.AgentTaskFailed
 	} else {
@@ -666,4 +734,162 @@ func (s *MemoryStore) CompleteAgentTask(id string, result map[string]any, errMsg
 	}
 	s.agentTasks[id] = task
 	return task, true
+}
+
+func (s *MemoryStore) UpsertSpec(scope string, key string, desired map[string]any) models.ResourceSpec {
+	if scope == "" {
+		scope = "cluster"
+	}
+	if key == "" {
+		key = "default"
+	}
+	if desired == nil {
+		desired = map[string]any{}
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.specs[scope]; !ok {
+		s.specs[scope] = map[string]models.ResourceSpec{}
+	}
+	cur := s.specs[scope][key]
+	cur.Desired = desired
+	if cur.Observed == nil {
+		cur.Observed = map[string]any{}
+	}
+	cur.SpecVersion++
+	cur.DriftStatus = models.DriftPending
+	cur.UpdatedAt = now
+	s.specs[scope][key] = cur
+	return cur
+}
+
+func (s *MemoryStore) GetSpec(scope string, key string) (models.ResourceSpec, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	group, ok := s.specs[scope]
+	if !ok {
+		return models.ResourceSpec{}, false
+	}
+	spec, ok := group[key]
+	return spec, ok
+}
+
+func (s *MemoryStore) ListSpecs(scope string) map[string]models.ResourceSpec {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]models.ResourceSpec{}
+	group, ok := s.specs[scope]
+	if !ok {
+		return out
+	}
+	for k, v := range group {
+		out[k] = v
+	}
+	return out
+}
+
+func (s *MemoryStore) SetSpecObserved(scope string, key string, observed map[string]any, drift models.DriftStatus, reconcileJobID string) (models.ResourceSpec, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	group, ok := s.specs[scope]
+	if !ok {
+		return models.ResourceSpec{}, false
+	}
+	spec, ok := group[key]
+	if !ok {
+		return models.ResourceSpec{}, false
+	}
+	spec.Observed = observed
+	spec.DriftStatus = drift
+	spec.LastReconcileJobID = reconcileJobID
+	spec.UpdatedAt = time.Now().UTC()
+	group[key] = spec
+	return spec, true
+}
+
+func (s *MemoryStore) DesiredStateBundle() models.DesiredStateBundle {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	getDefault := func(scope string) models.ResourceSpec {
+		if v, ok := s.specs[scope]["default"]; ok {
+			return v
+		}
+		return models.ResourceSpec{Desired: map[string]any{}, Observed: map[string]any{}, DriftStatus: models.DriftPending}
+	}
+	return models.DesiredStateBundle{
+		Cluster:    getDefault("cluster"),
+		Storage:    getDefault("storage"),
+		Network:    getDefault("network"),
+		Backup:     getDefault("backup"),
+		Workloads:  getDefault("workloads"),
+		Blueprints: getDefault("blueprint"),
+	}
+}
+
+func (s *MemoryStore) ListBlueprints() []models.BlueprintDefinition {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]models.BlueprintDefinition, 0, len(s.blueprints))
+	for _, b := range s.blueprints {
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func (s *MemoryStore) GetBlueprint(name string) (models.BlueprintDefinition, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, ok := s.blueprints[name]
+	return b, ok
+}
+
+func (s *MemoryStore) UpsertBlueprint(spec models.ServiceBlueprintSpec) models.ServiceBlueprintSpec {
+	if spec.Name == "" {
+		spec.Name = "unnamed-blueprint"
+	}
+	if spec.Version == "" {
+		spec.Version = "1.0.0"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blueprintSpecs[spec.Name] = spec
+	return spec
+}
+
+func (s *MemoryStore) ListBlueprintSpecs() []models.ServiceBlueprintSpec {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]models.ServiceBlueprintSpec, 0, len(s.blueprintSpecs))
+	for _, b := range s.blueprintSpecs {
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func (s *MemoryStore) GetPolicyMode() models.PolicyModeState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.policyMode.Mode == models.PolicyModeAggressive && !s.policyMode.AggressiveUntil.IsZero() && time.Now().UTC().After(s.policyMode.AggressiveUntil) {
+		s.policyMode.Mode = models.PolicyModeGuardedSRE
+		s.policyMode.UpdatedAt = time.Now().UTC()
+	}
+	return s.policyMode
+}
+
+func (s *MemoryStore) SetPolicyMode(mode models.PolicyMode, actor string, duration time.Duration) models.PolicyModeState {
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policyMode.Mode = mode
+	s.policyMode.LastChangedBy = actor
+	s.policyMode.UpdatedAt = now
+	if mode == models.PolicyModeAggressive && duration > 0 {
+		s.policyMode.AggressiveUntil = now.Add(duration)
+	} else {
+		s.policyMode.AggressiveUntil = time.Time{}
+	}
+	return s.policyMode
 }

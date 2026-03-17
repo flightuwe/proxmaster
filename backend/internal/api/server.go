@@ -45,6 +45,23 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/nodes", s.withAuth(s.handleNodes))
 	r.HandleFunc("/nodes/heartbeat", s.withAuth(s.handleNodeHeartbeat))
 	r.HandleFunc("/vms", s.withAuth(s.handleVMs))
+	r.HandleFunc("/spec/cluster", s.withAuth(s.handleSpecCluster))
+	r.HandleFunc("/spec/storage", s.withAuth(s.handleSpecStorage))
+	r.HandleFunc("/spec/network", s.withAuth(s.handleSpecNetwork))
+	r.HandleFunc("/spec/backup", s.withAuth(s.handleSpecBackup))
+	r.HandleFunc("/spec/workloads/", s.withAuth(s.handleSpecWorkloadByID))
+	r.HandleFunc("/state/cluster", s.withAuth(s.handleStateCluster))
+	r.HandleFunc("/state/storage", s.withAuth(s.handleStateStorage))
+	r.HandleFunc("/state/network", s.withAuth(s.handleStateNetwork))
+	r.HandleFunc("/state/backup", s.withAuth(s.handleStateBackup))
+	r.HandleFunc("/state/workloads", s.withAuth(s.handleStateWorkloads))
+	r.HandleFunc("/state/all", s.withAuth(s.handleStateAll))
+	r.HandleFunc("/blueprints", s.withAuth(s.handleBlueprints))
+	r.HandleFunc("/blueprints/plan", s.withAuth(s.handleBlueprintPlan))
+	r.HandleFunc("/blueprints/deploy", s.withAuth(s.handleBlueprintDeploy))
+	r.HandleFunc("/blueprints/verify", s.withAuth(s.handleBlueprintVerify))
+	r.HandleFunc("/blueprints/update", s.withAuth(s.handleBlueprintUpdate))
+	r.HandleFunc("/blueprints/rollback", s.withAuth(s.handleBlueprintRollback))
 	r.HandleFunc("/storage/inventory", s.withAuth(s.handleStorageInventory))
 	r.HandleFunc("/storage/rebuild/plan", s.withAuth(s.handleStorageRebuildPlan))
 	r.HandleFunc("/backup/policies", s.withAuth(s.handleBackupPolicies))
@@ -58,6 +75,7 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/autonomy/tasks/", s.withAuth(s.handleAutonomyTaskByID))
 	r.HandleFunc("/policy/simulate", s.withAuth(s.handlePolicySimulate))
 	r.HandleFunc("/policy/explain", s.withAuth(s.handlePolicyExplain))
+	r.HandleFunc("/policy/mode", s.withAuth(s.handlePolicyMode))
 	r.HandleFunc("/controlplane/endpoint", s.withAuth(s.handleControlPlaneEndpoint))
 	r.HandleFunc("/connectivity/status", s.withAuth(s.handleConnectivityStatus))
 	r.HandleFunc("/gitops/status", s.withAuth(s.handleGitOpsStatus))
@@ -187,6 +205,165 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVMs(w http.ResponseWriter, _ *http.Request) {
 	state := s.store.ClusterState()
 	writeJSON(w, http.StatusOK, map[string]any{"vms": state.VMs})
+}
+
+func (s *Server) handleSpecCluster(w http.ResponseWriter, r *http.Request) {
+	s.handleSpecScope(w, r, "cluster", "default")
+}
+
+func (s *Server) handleSpecStorage(w http.ResponseWriter, r *http.Request) {
+	s.handleSpecScope(w, r, "storage", "default")
+}
+
+func (s *Server) handleSpecNetwork(w http.ResponseWriter, r *http.Request) {
+	s.handleSpecScope(w, r, "network", "default")
+}
+
+func (s *Server) handleSpecBackup(w http.ResponseWriter, r *http.Request) {
+	s.handleSpecScope(w, r, "backup", "default")
+}
+
+func (s *Server) handleSpecWorkloadByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/spec/workloads/")
+	if strings.TrimSpace(id) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing workload id"})
+		return
+	}
+	s.handleSpecScope(w, r, "workloads", id)
+}
+
+func (s *Server) handleSpecScope(w http.ResponseWriter, r *http.Request, scope, key string) {
+	switch r.Method {
+	case http.MethodGet:
+		spec, ok := s.store.GetSpec(scope, key)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "spec not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"scope": scope, "key": key, "spec": spec})
+	case http.MethodPut:
+		var desired map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&desired); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+			return
+		}
+		resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+			Tool: "workload.spec.apply",
+			Params: map[string]any{
+				"scope": scope,
+				"key":   key,
+				"spec":  desired,
+			},
+			Actor: "android-admin",
+		})
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	default:
+		writeMethodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleStateCluster(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"observed": s.store.ClusterState(),
+		"spec":     s.store.ListSpecs("cluster"),
+	})
+}
+
+func (s *Server) handleStateStorage(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"observed": s.store.SyncStorageInventory(),
+		"spec":     s.store.ListSpecs("storage"),
+	})
+}
+
+func (s *Server) handleStateNetwork(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"observed": s.store.ClusterState().Networks,
+		"spec":     s.store.ListSpecs("network"),
+	})
+}
+
+func (s *Server) handleStateBackup(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"observed": map[string]any{
+			"policies": s.store.ListBackupPolicies(),
+			"targets":  s.store.ListBackupTargets(),
+		},
+		"spec": s.store.ListSpecs("backup"),
+	})
+}
+
+func (s *Server) handleStateWorkloads(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"observed": s.store.ClusterState().VMs,
+		"spec":     s.store.ListSpecs("workloads"),
+	})
+}
+
+func (s *Server) handleStateAll(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cluster":   s.store.ClusterState(),
+		"desired":   s.store.DesiredStateBundle(),
+		"workloads": s.store.ListSpecs("workloads"),
+		"policy":    s.store.GetPolicyMode(),
+	})
+}
+
+func (s *Server) handleBlueprints(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"catalog":        s.store.ListBlueprints(),
+			"deployed_specs": s.store.ListBlueprintSpecs(),
+		})
+		return
+	}
+	writeMethodNotAllowed(w)
+}
+
+func (s *Server) handleBlueprintPlan(w http.ResponseWriter, r *http.Request) {
+	s.handleBlueprintMCP(w, r, "blueprint.plan")
+}
+
+func (s *Server) handleBlueprintDeploy(w http.ResponseWriter, r *http.Request) {
+	s.handleBlueprintMCP(w, r, "blueprint.deploy")
+}
+
+func (s *Server) handleBlueprintVerify(w http.ResponseWriter, r *http.Request) {
+	s.handleBlueprintMCP(w, r, "blueprint.verify")
+}
+
+func (s *Server) handleBlueprintUpdate(w http.ResponseWriter, r *http.Request) {
+	s.handleBlueprintMCP(w, r, "blueprint.update")
+}
+
+func (s *Server) handleBlueprintRollback(w http.ResponseWriter, r *http.Request) {
+	s.handleBlueprintMCP(w, r, "blueprint.rollback")
+}
+
+func (s *Server) handleBlueprintMCP(w http.ResponseWriter, r *http.Request, tool string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var params map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool:   tool,
+		Params: params,
+		Actor:  "android-admin",
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleStorageInventory(w http.ResponseWriter, _ *http.Request) {
@@ -330,9 +507,52 @@ func (s *Server) handlePolicyExplain(w http.ResponseWriter, _ *http.Request) {
 	snap := s.gateEval.SnapshotFromState(s.store.ClusterState())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":        "SRE_MODE_FAIL_CLOSED",
+		"policy_mode": s.store.GetPolicyMode(),
 		"guarded":     []string{"storage.plan_apply", "network.plan_apply", "updates.canary_start", "node.runner.exec", "proxmaster.self_migrate", "ssh.breakglass.enable", "vpn.wireguard.apply"},
 		"health_gate": s.gateEval.Explain(snap),
 	})
+}
+
+func (s *Server) handlePolicyMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, s.store.GetPolicyMode())
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Mode           string `json:"mode"`
+		DurationMin    int    `json:"duration_minutes"`
+		ReauthToken    string `json:"reauth_token"`
+		SecondApprover string `json:"second_approver"`
+		HardwareMFA    bool   `json:"hardware_mfa"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	approveNow := req.ReauthToken == "reauth-ok"
+	resp, err := s.mcpSvc.HandleCall(r.Context(), models.MCPCallRequest{
+		Tool: "policy.mode.set",
+		Params: map[string]any{
+			"mode":             req.Mode,
+			"duration_minutes": req.DurationMin,
+			"actor":            "android-admin",
+		},
+		Actor:          "android-admin",
+		ApproveNow:     approveNow,
+		SecondApprover: req.SecondApprover,
+		HardwareMFA:    req.HardwareMFA,
+		IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleControlPlaneEndpoint(w http.ResponseWriter, _ *http.Request) {

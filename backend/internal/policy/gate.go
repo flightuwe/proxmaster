@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"time"
+
 	"proxmaster/backend/internal/health"
 	"proxmaster/backend/internal/models"
 )
@@ -19,7 +21,7 @@ func NewGate() *Gate {
 	return &Gate{}
 }
 
-func (g *Gate) Evaluate(risk models.RiskLevel, hardBlocked bool, hardBlockReason string, approveNow bool, gateOK bool, gateReason string, hardwareMFA bool, secondApprover string) Decision {
+func (g *Gate) Evaluate(risk models.RiskLevel, hardBlocked bool, hardBlockReason string, approveNow bool, gateOK bool, gateReason string, hardwareMFA bool, secondApprover string, mode models.PolicyModeState) Decision {
 	if !gateOK {
 		return Decision{
 			Allow:       false,
@@ -43,6 +45,9 @@ func (g *Gate) Evaluate(risk models.RiskLevel, hardBlocked bool, hardBlockReason
 	case models.RiskLow, models.RiskMedium:
 		return Decision{Allow: true, Type: models.DecisionAutoRun}
 	case models.RiskHigh:
+		if mode.Mode == models.PolicyModeAggressive && (mode.AggressiveUntil.IsZero() || mode.AggressiveUntil.After(time.Now().UTC())) {
+			return Decision{Allow: true, Type: models.DecisionAutoRun, RequiredApprovals: 0, Reason: "aggressive auto mode active"}
+		}
 		if approveNow && hardwareMFA && secondApprover != "" {
 			return Decision{Allow: true, Type: models.DecisionAutoRun, RequiredApprovals: 2}
 		}
@@ -58,8 +63,8 @@ func (g *Gate) Evaluate(risk models.RiskLevel, hardBlocked bool, hardBlockReason
 	}
 }
 
-func (g *Gate) Simulate(risk models.RiskLevel, hardBlocked bool, hardBlockReason string, approveNow bool, snapshot health.Snapshot) Decision {
+func (g *Gate) Simulate(risk models.RiskLevel, hardBlocked bool, hardBlockReason string, approveNow bool, snapshot health.Snapshot, mode models.PolicyModeState) Decision {
 	gate := health.NewGateEvaluator(true, 120)
 	gateOK, gateReason := gate.ValidateForWrite(snapshot)
-	return g.Evaluate(risk, hardBlocked, hardBlockReason, approveNow, gateOK, gateReason, false, "")
+	return g.Evaluate(risk, hardBlocked, hardBlockReason, approveNow, gateOK, gateReason, false, "", mode)
 }
