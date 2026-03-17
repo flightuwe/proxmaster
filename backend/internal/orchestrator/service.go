@@ -113,6 +113,10 @@ func (s *Service) Execute(ctx context.Context, tool string, params map[string]an
 			return nil, errors.New("missing vm_id or target_node")
 		}
 		return s.px.MigrateVM(ctx, vmID, targetNode)
+	case "vm.migration.plan":
+		vmID, _ := params["vm_id"].(string)
+		targetNode, _ := params["target_node"].(string)
+		return s.px.PlanVMMigration(ctx, vmID, targetNode)
 	case "proxmaster.self_migrate":
 		vmID, _ := params["vm_id"].(string)
 		targetNode, _ := params["target_node"].(string)

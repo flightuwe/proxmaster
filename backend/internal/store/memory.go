@@ -11,20 +11,21 @@ import (
 )
 
 type MemoryStore struct {
-	mu               sync.RWMutex
-	jobs             map[string]models.Job
-	byIdemKey        map[string]string
-	audits           []models.AuditEvent
-	incidents        []models.Incident
-	state            models.ClusterState
-	backupPolicies   map[string]models.BackupPolicy
-	backupTargets    map[string]models.BackupTarget
-	decisionLogs     []models.BackupDecisionLog
-	rebuildPlans     map[string]models.StorageRebuildPlan
-	restorePlans     map[string]models.RestorePlan
-	seq              uint64
-	vmIDSeq          uint64
-	rollbackIDSeq    uint64
+	mu             sync.RWMutex
+	jobs           map[string]models.Job
+	byIdemKey      map[string]string
+	audits         []models.AuditEvent
+	incidents      []models.Incident
+	state          models.ClusterState
+	backupPolicies map[string]models.BackupPolicy
+	backupTargets  map[string]models.BackupTarget
+	decisionLogs   []models.BackupDecisionLog
+	rebuildPlans   map[string]models.StorageRebuildPlan
+	restorePlans   map[string]models.RestorePlan
+	agentTasks     map[string]models.AgentTask
+	seq            uint64
+	vmIDSeq        uint64
+	rollbackIDSeq  uint64
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -40,9 +41,10 @@ func NewMemoryStore() *MemoryStore {
 			"target-s3-1":  {ID: "target-s3-1", Name: "s3-archive", Kind: "s3", URI: "s3://proxmaster-archive", Healthy: true},
 			"target-nfs-1": {ID: "target-nfs-1", Name: "nfs-backups", Kind: "nfs", URI: "nfs://10.0.20.5/exports/backups", Healthy: true},
 		},
-		decisionLogs:  make([]models.BackupDecisionLog, 0, 32),
-		rebuildPlans:  make(map[string]models.StorageRebuildPlan),
-		restorePlans:  make(map[string]models.RestorePlan),
+		decisionLogs: make([]models.BackupDecisionLog, 0, 32),
+		rebuildPlans: make(map[string]models.StorageRebuildPlan),
+		restorePlans: make(map[string]models.RestorePlan),
+		agentTasks:   make(map[string]models.AgentTask),
 		state: models.ClusterState{
 			Nodes: []models.Node{
 				{ID: "node-1", Name: "pve-node-1", Status: "online", Maintenance: false, LastHeartbeat: now, RunnerHealthy: true},
@@ -346,12 +348,12 @@ func (s *MemoryStore) SyncStorageInventory() map[string]any {
 	defer s.mu.Unlock()
 	s.state.UpdatedAt = time.Now().UTC()
 	return map[string]any{
-		"pools":               s.state.Pools,
-		"datastores":          s.state.Datastores,
-		"snapshot_tiers":      s.state.SnapshotTiers,
+		"pools":                s.state.Pools,
+		"datastores":           s.state.Datastores,
+		"snapshot_tiers":       s.state.SnapshotTiers,
 		"replication_policies": s.state.ReplicationPolicies,
-		"backup_targets":      s.state.BackupTargets,
-		"updated_at":          s.state.UpdatedAt,
+		"backup_targets":       s.state.BackupTargets,
+		"updated_at":           s.state.UpdatedAt,
 	}
 }
 
@@ -519,9 +521,9 @@ func (s *MemoryStore) RunBackupNow(workloadID string) map[string]any {
 	policy, decision, ok := s.ExplainBackupPolicy(workloadID)
 	if !ok {
 		return map[string]any{
-			"changed":    false,
+			"changed":     false,
 			"workload_id": workloadID,
-			"status":     "no_policy",
+			"status":      "no_policy",
 		}
 	}
 	return map[string]any{
@@ -575,9 +577,93 @@ func (s *MemoryStore) VerifyBackupSample() map[string]any {
 		})
 	}
 	return map[string]any{
-		"changed":       false,
-		"sample_count":  len(results),
-		"results":       results,
+		"changed":         false,
+		"sample_count":    len(results),
+		"results":         results,
 		"verified_at_utc": time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+func (s *MemoryStore) CreateAgentTask(task models.AgentTask) models.AgentTask {
+	now := time.Now().UTC()
+	if task.ID == "" {
+		task.ID = s.nextID("task")
+	}
+	if task.Status == "" {
+		task.Status = models.AgentTaskQueued
+	}
+	if task.RequestedBy == "" {
+		task.RequestedBy = "android-admin"
+	}
+	task.CreatedAt = now
+	task.UpdatedAt = now
+	s.mu.Lock()
+	s.agentTasks[task.ID] = task
+	s.mu.Unlock()
+	return task
+}
+
+func (s *MemoryStore) ListAgentTasks() []models.AgentTask {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]models.AgentTask, 0, len(s.agentTasks))
+	for _, t := range s.agentTasks {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out
+}
+
+func (s *MemoryStore) GetAgentTask(id string) (models.AgentTask, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.agentTasks[id]
+	return t, ok
+}
+
+func (s *MemoryStore) ClaimNextAgentTask(_ string) (models.AgentTask, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var picked models.AgentTask
+	found := false
+	for _, t := range s.agentTasks {
+		if t.Status != models.AgentTaskQueued {
+			continue
+		}
+		if !found || t.CreatedAt.Before(picked.CreatedAt) {
+			picked = t
+			found = true
+		}
+	}
+	if !found {
+		return models.AgentTask{}, false
+	}
+	now := time.Now().UTC()
+	picked.Status = models.AgentTaskRunning
+	picked.Attempts++
+	picked.UpdatedAt = now
+	picked.StartedAt = &now
+	s.agentTasks[picked.ID] = picked
+	return picked, true
+}
+
+func (s *MemoryStore) CompleteAgentTask(id string, result map[string]any, errMsg string) (models.AgentTask, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.agentTasks[id]
+	if !ok {
+		return models.AgentTask{}, false
+	}
+	now := time.Now().UTC()
+	task.UpdatedAt = now
+	task.FinishedAt = &now
+	task.Result = result
+	task.Error = errMsg
+	if errMsg != "" {
+		task.Status = models.AgentTaskFailed
+	} else {
+		task.Status = models.AgentTaskCompleted
+	}
+	s.agentTasks[id] = task
+	return task, true
 }

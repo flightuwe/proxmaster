@@ -51,8 +51,11 @@ func NewServer(cfg config.Config, st store.Store, mcpSvc *mcp.Service, gateEval 
 	r.HandleFunc("/backup/targets", s.withAuth(s.handleBackupTargets))
 	r.HandleFunc("/jobs", s.withAuth(s.handleJobs))
 	r.HandleFunc("/jobs/", s.withAuth(s.handleJobByID))
+	r.HandleFunc("/jobs/timeline", s.withAuth(s.handleJobsTimeline))
 	r.HandleFunc("/audit", s.withAuth(s.handleAudit))
 	r.HandleFunc("/incidents", s.withAuth(s.handleIncidents))
+	r.HandleFunc("/autonomy/tasks", s.withAuth(s.handleAutonomyTasks))
+	r.HandleFunc("/autonomy/tasks/", s.withAuth(s.handleAutonomyTaskByID))
 	r.HandleFunc("/policy/simulate", s.withAuth(s.handlePolicySimulate))
 	r.HandleFunc("/policy/explain", s.withAuth(s.handlePolicyExplain))
 	r.HandleFunc("/controlplane/endpoint", s.withAuth(s.handleControlPlaneEndpoint))
@@ -249,6 +252,64 @@ func (s *Server) handleAudit(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleIncidents(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"incidents": s.store.ListIncidents()})
+}
+
+func (s *Server) handleJobsTimeline(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"jobs":             s.store.ListJobs(),
+		"tasks":            s.store.ListAgentTasks(),
+		"audit":            s.store.ListAudit(),
+		"incidents":        s.store.ListIncidents(),
+		"generated_at_utc": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleAutonomyTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]any{"tasks": s.store.ListAgentTasks()})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Type        string         `json:"type"`
+		Payload     map[string]any `json:"payload"`
+		RequestedBy string         `json:"requested_by"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json"})
+		return
+	}
+	if strings.TrimSpace(req.Type) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing type"})
+		return
+	}
+	task := s.store.CreateAgentTask(models.AgentTask{
+		Type:        strings.TrimSpace(req.Type),
+		Payload:     req.Payload,
+		RequestedBy: firstNonEmpty(req.RequestedBy, "android-admin"),
+	})
+	writeJSON(w, http.StatusCreated, map[string]any{"task": task})
+}
+
+func (s *Server) handleAutonomyTaskByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/autonomy/tasks/")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing task id"})
+		return
+	}
+	task, ok := s.store.GetAgentTask(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "task not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task": task})
 }
 
 func (s *Server) handlePolicySimulate(w http.ResponseWriter, r *http.Request) {

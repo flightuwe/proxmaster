@@ -34,4 +34,9 @@ type Store interface {
 	PlanRestore(workloadID, targetID string) models.RestorePlan
 	ExecuteRestore(planID string) (models.RestorePlan, bool)
 	VerifyBackupSample() map[string]any
+	CreateAgentTask(task models.AgentTask) models.AgentTask
+	ListAgentTasks() []models.AgentTask
+	GetAgentTask(id string) (models.AgentTask, bool)
+	ClaimNextAgentTask(worker string) (models.AgentTask, bool)
+	CompleteAgentTask(id string, result map[string]any, errMsg string) (models.AgentTask, bool)
 }

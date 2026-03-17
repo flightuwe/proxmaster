@@ -76,6 +76,20 @@ func (s *PostgresStore) initSchema(ctx context.Context) error {
 			message TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS agent_tasks (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			payload_json JSONB NOT NULL,
+			status TEXT NOT NULL,
+			requested_by TEXT NOT NULL,
+			result_json JSONB,
+			error TEXT,
+			attempts INT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL,
+			started_at TIMESTAMPTZ,
+			finished_at TIMESTAMPTZ
+		)`,
 	}
 	for _, q := range queries {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -137,6 +151,32 @@ func (s *PostgresStore) persistIncident(ctx context.Context, i models.Incident) 
 	}
 }
 
+func (s *PostgresStore) persistAgentTask(ctx context.Context, t models.AgentTask) {
+	payloadJSON, _ := json.Marshal(t.Payload)
+	resultJSON, _ := json.Marshal(t.Result)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO agent_tasks (
+			id, type, payload_json, status, requested_by, result_json, error, attempts,
+			created_at, updated_at, started_at, finished_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		ON CONFLICT (id) DO UPDATE SET
+			type=EXCLUDED.type,
+			payload_json=EXCLUDED.payload_json,
+			status=EXCLUDED.status,
+			requested_by=EXCLUDED.requested_by,
+			result_json=EXCLUDED.result_json,
+			error=EXCLUDED.error,
+			attempts=EXCLUDED.attempts,
+			updated_at=EXCLUDED.updated_at,
+			started_at=EXCLUDED.started_at,
+			finished_at=EXCLUDED.finished_at
+	`, t.ID, t.Type, payloadJSON, string(t.Status), t.RequestedBy, nullJSON(resultJSON), nullable(t.Error), t.Attempts,
+		t.CreatedAt, t.UpdatedAt, t.StartedAt, t.FinishedAt)
+	if err != nil {
+		log.Printf("warn: failed to persist task %s: %v", t.ID, err)
+	}
+}
+
 func (s *PostgresStore) CreateJob(job models.Job) models.Job {
 	created := s.mem.CreateJob(job)
 	s.persistJob(context.Background(), created)
@@ -155,20 +195,22 @@ func (s *PostgresStore) GetJob(id string) (models.Job, bool) { return s.mem.GetJ
 func (s *PostgresStore) GetJobByIdempotencyKey(key string) (models.Job, bool) {
 	return s.mem.GetJobByIdempotencyKey(key)
 }
-func (s *PostgresStore) ListJobs() []models.Job                        { return s.mem.ListJobs() }
-func (s *PostgresStore) ClusterState() models.ClusterState             { return s.mem.ClusterState() }
+func (s *PostgresStore) ListJobs() []models.Job            { return s.mem.ListJobs() }
+func (s *PostgresStore) ClusterState() models.ClusterState { return s.mem.ClusterState() }
 func (s *PostgresStore) SetNodeMaintenance(nodeID string, maintenance bool) bool {
 	return s.mem.SetNodeMaintenance(nodeID, maintenance)
 }
-func (s *PostgresStore) MarkNodeHeartbeat(nodeID string) bool          { return s.mem.MarkNodeHeartbeat(nodeID) }
-func (s *PostgresStore) MigrateVM(vmID, targetNode string) bool        { return s.mem.MigrateVM(vmID, targetNode) }
-func (s *PostgresStore) CreateVM(vm models.VM) models.VM               { return s.mem.CreateVM(vm) }
-func (s *PostgresStore) CreateLXC(vm models.VM) models.VM              { return s.mem.CreateLXC(vm) }
+func (s *PostgresStore) MarkNodeHeartbeat(nodeID string) bool { return s.mem.MarkNodeHeartbeat(nodeID) }
+func (s *PostgresStore) MigrateVM(vmID, targetNode string) bool {
+	return s.mem.MigrateVM(vmID, targetNode)
+}
+func (s *PostgresStore) CreateVM(vm models.VM) models.VM  { return s.mem.CreateVM(vm) }
+func (s *PostgresStore) CreateLXC(vm models.VM) models.VM { return s.mem.CreateLXC(vm) }
 func (s *PostgresStore) CloneVM(templateID, newID, targetNode, name string) (models.VM, bool) {
 	return s.mem.CloneVM(templateID, newID, targetNode, name)
 }
-func (s *PostgresStore) ApplyPool(name, poolType string)               { s.mem.ApplyPool(name, poolType) }
-func (s *PostgresStore) ApplyNetwork(name, kind, cidr string)          { s.mem.ApplyNetwork(name, kind, cidr) }
+func (s *PostgresStore) ApplyPool(name, poolType string)      { s.mem.ApplyPool(name, poolType) }
+func (s *PostgresStore) ApplyNetwork(name, kind, cidr string) { s.mem.ApplyNetwork(name, kind, cidr) }
 
 func (s *PostgresStore) AddAudit(action, actor string, risk models.RiskLevel, approved bool, meta map[string]any) models.AuditEvent {
 	e := s.mem.AddAudit(action, actor, risk, approved, meta)
@@ -240,6 +282,36 @@ func (s *PostgresStore) ExecuteRestore(planID string) (models.RestorePlan, bool)
 
 func (s *PostgresStore) VerifyBackupSample() map[string]any {
 	return s.mem.VerifyBackupSample()
+}
+
+func (s *PostgresStore) CreateAgentTask(task models.AgentTask) models.AgentTask {
+	created := s.mem.CreateAgentTask(task)
+	s.persistAgentTask(context.Background(), created)
+	return created
+}
+
+func (s *PostgresStore) ListAgentTasks() []models.AgentTask {
+	return s.mem.ListAgentTasks()
+}
+
+func (s *PostgresStore) GetAgentTask(id string) (models.AgentTask, bool) {
+	return s.mem.GetAgentTask(id)
+}
+
+func (s *PostgresStore) ClaimNextAgentTask(worker string) (models.AgentTask, bool) {
+	task, ok := s.mem.ClaimNextAgentTask(worker)
+	if ok {
+		s.persistAgentTask(context.Background(), task)
+	}
+	return task, ok
+}
+
+func (s *PostgresStore) CompleteAgentTask(id string, result map[string]any, errMsg string) (models.AgentTask, bool) {
+	task, ok := s.mem.CompleteAgentTask(id, result, errMsg)
+	if ok {
+		s.persistAgentTask(context.Background(), task)
+	}
+	return task, ok
 }
 
 func nullable(sv string) any {

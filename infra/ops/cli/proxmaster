@@ -404,6 +404,33 @@ cmd_mcp() {
   api_call POST /mcp/call "$payload" | jq .
 }
 
+cmd_autonomy_task() {
+  need_cmd jq
+  local tool="${1:-}"
+  local payload="${2:-{}}"
+  if [ -z "$tool" ]; then
+    echo "Usage: proxmaster auto-task <tool> [json_payload]" >&2
+    exit 1
+  fi
+  if ! echo "$payload" | jq -e . >/dev/null 2>&1; then
+    echo "[proxmaster] invalid json payload: $payload" >&2
+    exit 1
+  fi
+  local body
+  body="$(jq -nc --arg t "$tool" --argjson p "$payload" '{type:$t,payload:$p,requested_by:"cli-admin"}')"
+  api_call POST /autonomy/tasks "$body" | jq .
+}
+
+cmd_autonomy_tasks() {
+  need_cmd jq
+  api_call GET /autonomy/tasks | jq .
+}
+
+cmd_timeline() {
+  need_cmd jq
+  api_call GET /jobs/timeline | jq .
+}
+
 usage() {
   cat <<EOF
 Usage: proxmaster <command>
@@ -426,6 +453,10 @@ Commands:
   wg-plan              WireGuard plan/template output
   wg-apply             Apply WireGuard config (guarded)
   mcp                  Execute MCP tool call (mcp <tool> [json_params])
+  auto-task            Queue autonomy task (auto-task <tool> [json_payload])
+  auto-tasks           List autonomy task queue
+  timeline             Show jobs/tasks/audit/incident timeline
+  tl                   Alias for timeline
   bootstrap [quick]    One-command VM bootstrap (non-interactive quick mode)
   help                 Show this help
 EOF
@@ -446,6 +477,9 @@ main() {
     wgp) cmd="wg-plan" ;;
     wga) cmd="wg-apply" ;;
     mc) cmd="mcp" ;;
+    at) cmd="auto-task" ;;
+    ats) cmd="auto-tasks" ;;
+    tl) cmd="timeline" ;;
     bs) cmd="bootstrap" ;;
   esac
   case "$cmd" in
@@ -460,6 +494,9 @@ main() {
     wg-plan) cmd_wg_plan "$@" ;;
     wg-apply) cmd_wg_apply "$@" ;;
     mcp) cmd_mcp "$@" ;;
+    auto-task) cmd_autonomy_task "$@" ;;
+    auto-tasks) cmd_autonomy_tasks "$@" ;;
+    timeline) cmd_timeline "$@" ;;
     bootstrap) cmd_bootstrap "$@" ;;
     help|-h|--help) usage ;;
     *)

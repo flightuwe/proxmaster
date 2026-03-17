@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"proxmaster/backend/internal/api"
+	"proxmaster/backend/internal/autonomy"
 	"proxmaster/backend/internal/breakglass"
 	"proxmaster/backend/internal/config"
 	"proxmaster/backend/internal/connectivity"
@@ -71,6 +72,8 @@ func main() {
 	policyGate := policy.NewGate()
 	gateEval := health.NewGateEvaluator(cfg.FailClosed, cfg.RunnerHeartbeatMaxSec)
 	mcpSvc := mcp.NewService(st, riskEngine, policyGate, gateEval, orch)
+	autonomySvc := autonomy.NewService(st, mcpSvc, cfg.AgentAPIPollSec)
+	autonomySvc.Start(context.Background())
 
 	srv := api.NewServer(cfg, st, mcpSvc, gateEval, cp, connSvc, gitopsSvc, breakglassSvc)
 	log.Printf("proxmaster api listening on %s", cfg.ListenAddr)

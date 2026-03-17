@@ -128,6 +128,49 @@ func (c *Client) MigrateVM(ctx context.Context, vmID, targetNode string) (map[st
 	return map[string]any{"changed": true, "vm_id": vmID, "target_node": targetNode}, nil
 }
 
+func (c *Client) PlanVMMigration(ctx context.Context, vmID, targetNode string) (map[string]any, error) {
+	state := c.GetState(ctx)
+	if vmID == "" {
+		return nil, errors.New("missing vm_id")
+	}
+	var sourceVM *models.VM
+	for i := range state.VMs {
+		if state.VMs[i].ID == vmID {
+			sourceVM = &state.VMs[i]
+			break
+		}
+	}
+	if sourceVM == nil {
+		return nil, errors.New("vm not found")
+	}
+	if targetNode == "" {
+		for _, n := range state.Nodes {
+			if n.ID != sourceVM.NodeID && n.Status == "online" && !n.Maintenance {
+				targetNode = n.ID
+				break
+			}
+		}
+	}
+	if targetNode == "" {
+		return nil, errors.New("no suitable target node found")
+	}
+	return map[string]any{
+		"changed":           false,
+		"action":            "vm_migration_plan",
+		"vm_id":             vmID,
+		"source_node":       sourceVM.NodeID,
+		"target_node":       targetNode,
+		"live_migration":    true,
+		"downtime_expected": "low (<3s)",
+		"prechecks": []string{
+			"target node online",
+			"shared storage reachable",
+			"network bridge parity",
+			"ha policy compatible",
+		},
+	}, nil
+}
+
 func (c *Client) SelfMigrateProxmaster(ctx context.Context, vmID, targetNode string, restartAfter bool) (map[string]any, error) {
 	if vmID == "" {
 		vmID = "100"
@@ -169,17 +212,17 @@ func (c *Client) SelfMigrateProxmaster(ctx context.Context, vmID, targetNode str
 	switchResult := c.controlPlane.SwitchTo(targetNode)
 
 	return map[string]any{
-		"changed":                true,
-		"action":                 "proxmaster_self_migrate",
-		"management_vm_id":       vmID,
-		"from_node":              vm.NodeID,
-		"to_node":                targetNode,
-		"live_migration":         true,
-		"restart_after_migrate":  restartAfter,
-		"switch_mode":            "seamless_handover",
-		"client_reconnect_hint":  "reconnect API client to active control-plane endpoint",
-		"handover":               switchResult,
-		"completed_at_utc":       time.Now().UTC().Format(time.RFC3339),
+		"changed":               true,
+		"action":                "proxmaster_self_migrate",
+		"management_vm_id":      vmID,
+		"from_node":             vm.NodeID,
+		"to_node":               targetNode,
+		"live_migration":        true,
+		"restart_after_migrate": restartAfter,
+		"switch_mode":           "seamless_handover",
+		"client_reconnect_hint": "reconnect API client to active control-plane endpoint",
+		"handover":              switchResult,
+		"completed_at_utc":      time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
@@ -261,13 +304,13 @@ func (c *Client) PlanApplyStoragePool(_ context.Context, name, poolType string) 
 		return nil, errors.New("missing name or type")
 	}
 	return map[string]any{
-		"changed":            false,
-		"action":             "storage_pool_plan_apply",
-		"name":               name,
-		"type":               poolType,
-		"dry_run_passed":     true,
-		"impact_summary":     "pool metadata update only",
-		"requires_approval":  true,
+		"changed":           false,
+		"action":            "storage_pool_plan_apply",
+		"name":              name,
+		"type":              poolType,
+		"dry_run_passed":    true,
+		"impact_summary":    "pool metadata update only",
+		"requires_approval": true,
 	}, nil
 }
 
@@ -322,9 +365,9 @@ func (c *Client) CanaryStart(_ context.Context, nodeID string) (map[string]any, 
 		nodeID = "node-1"
 	}
 	return map[string]any{
-		"changed":       true,
-		"status":        "canary_started",
-		"node_id":       nodeID,
+		"changed":        true,
+		"status":         "canary_started",
+		"node_id":        nodeID,
 		"started_at_utc": time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
